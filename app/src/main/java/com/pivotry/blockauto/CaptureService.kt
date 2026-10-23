@@ -3,7 +3,6 @@ package com.pivotry.blockauto
 import android.app.*
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
@@ -12,116 +11,256 @@ import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.*
 import android.view.WindowManager
-import java.util.concurrent.Executors
+import com.pivotry.blockauto.core.*
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.abs
+import kotlin.math.min
 
-class CaptureService:Service() {
- companion object { @Volatile var active:CaptureService?=null }
- private var projection:MediaProjection?=null
- private var display:VirtualDisplay?=null
- private var reader:ImageReader?=null
- private val main=Handler(Looper.getMainLooper())
- private val worker=Executors.newSingleThreadExecutor()
- @Volatile private var busy=false
- @Volatile private var running=false
- private var failures=0
- private var previousBoard:Long?=null
- private var previousShapeCount=-1
- private var awaiting=false
- private var dragDoneAt=0L
- private var lastStatus=""
- override fun onBind(intent:Intent?)=null
- override fun onCreate() {super.onCreate();active=this}
- override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int {
-  if(intent?.action=="STOP"){stopSelf();return START_NOT_STICKY}
-  val nm=getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-  nm.createNotificationChannel(NotificationChannel("capture","게임 화면 분석",NotificationManager.IMPORTANCE_LOW))
-  val notification=Notification.Builder(this,"capture")
-   .setSmallIcon(android.R.drawable.ic_media_play)
-   .setContentTitle("Block Blast Auto")
-   .setContentText("화면 분석 준비 — 접근성 플로팅 버튼으로 시작")
-   .setOngoing(true).build()
-  if(Build.VERSION.SDK_INT>=29)startForeground(100,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
-  else startForeground(100,notification)
-  val result=intent?.getIntExtra("resultCode",Activity.RESULT_CANCELED)?:Activity.RESULT_CANCELED
-  val data:Intent?=if(Build.VERSION.SDK_INT>=33) intent?.getParcelableExtra("data",Intent::class.java) else @Suppress("DEPRECATION") intent?.getParcelableExtra("data")
-  if(result!=Activity.RESULT_OK || data==null){stopSelf();return START_NOT_STICKY}
-  val wm=getSystemService(WINDOW_SERVICE) as WindowManager
-  val point=android.graphics.Point()
-  @Suppress("DEPRECATION") wm.defaultDisplay.getRealSize(point)
-  val manager=getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-  projection=manager.getMediaProjection(result,data)
-  projection?.registerCallback(object:MediaProjection.Callback(){override fun onStop(){stopSelf()}},main)
-  reader=ImageReader.newInstance(point.x,point.y,PixelFormat.RGBA_8888,2)
-  display=projection?.createVirtualDisplay("BlockBlastVision",point.x,point.y,resources.displayMetrics.densityDpi,
-   DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,reader?.surface,null,main)
-  status("화면 공유 준비됨 · 플로팅 버튼을 누르세요")
-  main.postDelayed(loop,850)
-  return START_NOT_STICKY
- }
- fun toggle() {
-  running=!running;failures=0;awaiting=false;previousBoard=null
-  status(if(running)"자동 플레이 시작" else "자동 플레이 정지")
-  AutoService.live?.setRunning(running)
- }
- fun isRunning()=running
- private val loop=object:Runnable {
-  override fun run() {
-   if(running && !busy && SystemClock.elapsedRealtime()-dragDoneAt>800L)capture()
-   main.postDelayed(this,650)
-  }
- }
- private fun capture() {
-  val img=reader?.acquireLatestImage()?:return
-  busy=true
-  worker.execute {
-   try {
-    val plane=img.planes[0]
-    val full=Bitmap.createBitmap(plane.rowStride/plane.pixelStride,img.height,Bitmap.Config.ARGB_8888)
-    full.copyPixelsFromBuffer(plane.buffer)
-    val bitmap=Bitmap.createBitmap(full,0,0,img.width,img.height)
-    val frame=Vision.read(bitmap)
-    bitmap.recycle();full.recycle()
-    if(frame==null){main.post {status("게임판 미검출 · 게임을 열어주세요")};return@execute}
-    if(frame.shapes.isEmpty()){main.post {status("블록 대기 중 또는 게임 종료")};return@execute}
-    if(awaiting) {
-     if(frame.board==previousBoard && frame.shapes.size==previousShapeCount){
-      failures++
-      if(failures>=3){main.post {running=false;AutoService.live?.setRunning(false);status("드래그 반영 안 됨 · Y 보정 확인")};return@execute}
-      main.post {status("블록 이동 확인 중 ("+failures+"/3)")}
-      return@execute
-     }
-     awaiting=false;failures=0
+/** All vision/control state belongs to one worker. Android gestures belong to main. */
+class CaptureService : Service() {
+    companion object { @Volatile var active: CaptureService? = null }
+    private enum class Phase { IDLE, PICKED, ALIGN, VERIFY }
+    private val main = Handler(Looper.getMainLooper())
+    private val thread = HandlerThread("BlockBlast-control")
+    private lateinit var worker: Handler
+    private val generation = AtomicInteger()
+    private val vision = Vision()
+    private var projection: MediaProjection? = null
+    private var display: VirtualDisplay? = null
+    private var reader: ImageReader? = null
+    private var physicalWidth = 0
+    private var physicalHeight = 0
+    @Volatile private var running = false
+    @Volatile private var destroyed = false
+    @Volatile private var targetApp: String? = null
+    @Volatile var statusMessage = "준비 중"; private set
+    @Volatile var verifiedMoves = 0; private set
+    private var phase = Phase.IDLE
+    private var inFlight = false
+    private var cached: Game.Image? = null
+    private var timestamp = Long.MIN_VALUE
+    private var actionFloor = Long.MIN_VALUE
+    private var nextReadAt = 0L
+    private var phaseAt = 0L
+    private var stableSignature = ""
+    private var stableAt = 0L
+    private var before: Game.Frame? = null
+    private var beforeImage: Game.Image? = null
+    private var selected: Game.Shape? = null
+    private var verifier: MoveVerifier? = null
+    private var targetX = 0f
+    private var targetY = 0f
+    private var fingerX = 0f
+    private var fingerY = 0f
+    private var observed: DragAlignment.Origin? = null
+    private var observedAt = 0L
+    private var corrections = 0
+    private var retrySignature = ""
+    private var retries = 0
+
+    override fun onBind(intent: Intent?) = null
+    override fun onCreate() {
+        super.onCreate(); thread.start(); worker = Handler(thread.looper); active = this
     }
-    val result=Solver.best(frame.board,frame.shapes.map {it.piece})
-    if(result==null){main.post {status("블록 배치 불가 · 게임 종료 가능")};return@execute}
-    val m=result.moves.first()
-    val shape=frame.shapes[m.piece]
-    val yOffset=getSharedPreferences("settings",MODE_PRIVATE).getInt("dragYOffset",115)
-    val targetX=frame.left+(m.x+shape.piece.w*.5f)*frame.cell
-    val targetY=frame.top+(m.y+shape.piece.h*.5f)*frame.cell+yOffset*frame.height/1536f
-    previousBoard=frame.board;previousShapeCount=frame.shapes.size
-    awaiting=true
-    main.post {
-     if(!running)return@post
-     status("블록 "+(shape.slot+1)+" → ("+(m.x+1)+","+(m.y+1)+")")
-     val service=AutoService.live
-     if(service==null){running=false;status("접근성 서비스를 켜주세요")}
-     else service.drag(shape.sourceX,shape.sourceY,targetX,targetY){success->
-      dragDoneAt=SystemClock.elapsedRealtime()
-      if(!success){failures++;awaiting=false;if(failures>=3){running=false;service.setRunning(false);status("접근성 드래그 실패")}}
-     }
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == "STOP") { halt("화면 공유 종료"); stopSelf(); return START_NOT_STICKY }
+        if (projection != null) return START_NOT_STICKY
+        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        nm.createNotificationChannel(NotificationChannel("capture","자동 플레이",NotificationManager.IMPORTANCE_LOW))
+        val stop = PendingIntent.getService(this,0,Intent(this,CaptureService::class.java).setAction("STOP"),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val notification = Notification.Builder(this,"capture")
+            .setSmallIcon(android.R.drawable.ic_media_play).setContentTitle("Block Blast Auto")
+            .setContentText("화면은 기기 안에서만 분석합니다 · 눌러 종료")
+            .setContentIntent(stop).setOngoing(true)
+            .addAction(Notification.Action.Builder(null,"종료",stop).build()).build()
+        startForeground(100,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+        val result = intent?.getIntExtra("resultCode",Activity.RESULT_CANCELED) ?: Activity.RESULT_CANCELED
+        val data = if (Build.VERSION.SDK_INT >= 33) intent?.getParcelableExtra("data",Intent::class.java)
+            else @Suppress("DEPRECATION") intent?.getParcelableExtra<Intent>("data")
+        if (result != Activity.RESULT_OK || data == null) { stopSelf(); return START_NOT_STICKY }
+        try {
+            val bounds = (getSystemService(WINDOW_SERVICE) as WindowManager).maximumWindowMetrics.bounds
+            physicalWidth = bounds.width(); physicalHeight = bounds.height()
+            require(physicalWidth <= 2160 && physicalHeight <= 4800) { "Display too large" }
+            val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            projection = manager.getMediaProjection(result,data)
+            projection!!.registerCallback(object : MediaProjection.Callback() {
+                override fun onStop() { halt("화면 공유가 중단되었습니다"); stopSelf() }
+                override fun onCapturedContentResize(width: Int,height: Int) {
+                    if (width != physicalWidth || height != physicalHeight) {
+                        halt("화면 크기 변경 · 전체 화면 공유를 다시 시작하세요"); stopSelf()
+                    }
+                }
+            },main)
+            reader = ImageReader.newInstance(physicalWidth,physicalHeight,PixelFormat.RGBA_8888,3)
+            display = projection!!.createVirtualDisplay("BlockBlastVision",physicalWidth,physicalHeight,resources.configuration.densityDpi,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,reader!!.surface,null,main)
+            status("게임을 열고 ▶ 자동 시작을 누르세요")
+            worker.post(loop)
+        } catch (e: Exception) { status("화면 공유 실패: " + e.javaClass.simpleName); stopSelf() }
+        return START_NOT_STICKY
     }
-   }catch(e:Exception){main.post{status("화면 분석 오류: "+e.javaClass.simpleName)}}
-   finally{img.close();busy=false}
-  }
- }
- private fun status(s:String){if(s!=lastStatus){lastStatus=s;AutoService.live?.setStatus(s)}}
- override fun onDestroy(){
-  running=false;active=null
-  main.removeCallbacksAndMessages(null)
-  display?.release();reader?.close();projection?.stop()
-  worker.shutdownNow()
-  AutoService.live?.setRunning(false)
-  super.onDestroy()
- }
+    fun isRunning() = running
+    fun toggle() {
+        if (running) { halt("자동 플레이 정지"); return }
+        if (AutoService.live == null) { status("접근성 서비스를 켜주세요"); return }
+        val epoch = generation.incrementAndGet()
+        running = true; targetApp = null; verifiedMoves = 0
+        AutoService.live?.setRunning(true)
+        worker.post {
+            if (!valid(epoch)) return@post
+            phase = Phase.IDLE; inFlight = false; beforeImage = null; before = null; verifier = null
+            stableSignature = ""; observed = null; retries = 0; retrySignature = ""
+            actionFloor = Long.MIN_VALUE; phaseAt = SystemClock.uptimeMillis()
+            status("게임판 확인 중")
+        }
+    }
+    fun halt(reason: String) {
+        running = false; generation.incrementAndGet(); targetApp = null
+        main.post { AutoService.live?.abortHold(); AutoService.live?.setRunning(false) }
+        status(reason)
+    }
+    fun checkForeground() {
+        val expected = targetApp ?: return
+        val actual = AutoService.live?.foregroundPackage()
+        if (running && actual != null && actual != expected) halt("앱 전환으로 정지 · 게임에서 다시 시작하세요")
+    }
+    private fun valid(epoch: Int) = running && !destroyed && generation.get() == epoch
+    private fun status(message: String) {
+        if (statusMessage != message) {
+            statusMessage = message
+            android.util.Log.i("BlockBlastAuto",message)
+            AutoService.live?.setStatus(message)
+        }
+    }
+    private fun stable(signature: String,now: Long): Boolean {
+        if (signature != stableSignature) { stableSignature = signature; stableAt = now; return false }
+        return now - stableAt >= 200
+    }
+    private val loop = object : Runnable {
+        override fun run() {
+            if (destroyed) return
+            try { if (running && !inFlight) tick() }
+            catch (e: Exception) { halt("분석 중단: " + e.javaClass.simpleName) }
+            if (!destroyed) worker.postDelayed(this,130)
+        }
+    }
+    private fun tick() {
+        val now = SystemClock.uptimeMillis()
+        if (now < nextReadAt) return
+        val bounds = (getSystemService(WINDOW_SERVICE) as WindowManager).maximumWindowMetrics.bounds
+        if (bounds.width() != physicalWidth || bounds.height() != physicalHeight) { halt("회전 감지 · 세로 화면에서 공유를 다시 시작하세요"); return }
+        val img = reader?.acquireLatestImage()
+        if (img != null) {
+            try { if (img.timestamp > timestamp) { cached = vision.copy(img); timestamp = img.timestamp } }
+            finally { img.close() }
+        }
+        // Static screens may not produce new virtual-display buffers. Re-observe the
+        // latest image, but never reuse an image from before an action across a move.
+        val image = cached ?: return
+        if (timestamp <= actionFloor) {
+            if (now-phaseAt > 3500) halt("새 화면을 받지 못했습니다 · 공유를 다시 시작하세요")
+            return
+        }
+        val epoch = generation.get()
+        if (phase == Phase.PICKED || phase == Phase.ALIGN) { align(image,now,epoch); return }
+        val frame = Recognizer.read(image)
+        if (!valid(epoch)) return
+        if (frame == null) {
+            if (phase == Phase.VERIFY && now-phaseAt > 3500) halt("설치 결과를 읽지 못해 정지했습니다")
+            else if (phase == Phase.IDLE) { stableSignature = ""; status("게임판 미검출 · 세로 게임 화면을 열어주세요") }
+            return
+        }
+        if (phase == Phase.VERIFY) {
+            if (stable(frame.signature(),now) && verifier!!.matches(frame)) {
+                verifiedMoves++; status("설치 확인 · " + verifiedMoves + "수")
+                phase = Phase.IDLE; stableSignature = ""; beforeImage = null; before = null
+                verifier = null; retries = 0; retrySignature = ""; actionFloor = Long.MIN_VALUE
+            } else if (now-phaseAt > 3200) {
+                if (verifier!!.unchanged(frame) && retries < 1) {
+                    retries++; retrySignature = frame.signature(); phase = Phase.IDLE; stableSignature = ""
+                    actionFloor = Long.MIN_VALUE; status("설치 안 됨 · 새 화면으로 1회 재시도")
+                } else halt("설치 결과 불일치 · 잘못된 연속 조작을 막기 위해 정지")
+            }
+            return
+        }
+        if (frame.shapes.isEmpty()) { stableSignature = ""; status("블록 대기 중 또는 게임 종료"); return }
+        if (!stable(frame.signature(),now)) return
+        val app = AutoService.live?.foregroundPackage() ?: return
+        if (targetApp != null && targetApp != app) { halt("앱 전환 감지"); return }
+        val result = Planner.best(frame.board,frame.shapes.map { it.piece },180)
+        if (!valid(epoch)) return
+        if (result == null) { halt("인식한 블록의 합법적인 배치가 없습니다"); return }
+        if (retrySignature.isNotEmpty() && frame.signature() != retrySignature) { retries = 0; retrySignature = "" }
+        val move = result.moves.first()
+        val shape = frame.shapes[move.piece]
+        before = frame; beforeImage = image; selected = shape
+        verifier = MoveVerifier(frame,move.piece,move.x,move.y)
+        targetX = frame.left+move.x*frame.cell; targetY = frame.top+move.y*frame.cell
+        targetApp = app; corrections = 0; observed = null
+        fingerX = frame.width*.5f
+        fingerY = min(frame.height-frame.cell*.7f,frame.top+8*frame.cell+shape.piece.h*frame.cell*.5f+2*frame.cell)
+        status("블록 " + (shape.slot+1) + " 잡기 · 위치 측정")
+        gesture(epoch,Phase.PICKED) { service,done ->
+            service.beginDrag(shape.pickX*scaleX(frame),shape.pickY*scaleY(frame),fingerX*scaleX(frame),fingerY*scaleY(frame),app,done)
+        }
+    }
+    private fun align(image: Game.Image,now: Long,epoch: Int) {
+        val frame = before ?: return
+        val shape = selected ?: return
+        val found = DragAlignment.locate(image,beforeImage!!,frame,shape,fingerX,fingerY)
+        if (!valid(epoch)) return
+        if (found == null) {
+            observed = null
+            if (now-phaseAt > 2200) halt("잡힌 블록 위치가 불확실해 정지 · 블록을 원위치로 돌립니다")
+            return
+        }
+        val old = observed
+        if (old == null || abs(old.x-found.x)>frame.cell*.08 || abs(old.y-found.y)>frame.cell*.08) {
+            observed = found; observedAt = now; return
+        }
+        if (now-observedAt < 180) return
+        val dx = targetX-found.x; val dy = targetY-found.y
+        if (phase == Phase.ALIGN && abs(dx)<frame.cell*.13 && abs(dy)<frame.cell*.13) {
+            status("정렬 확인 · 블록 놓기")
+            gesture(epoch,Phase.VERIFY) { service,done -> service.moveHeld(fingerX*scaleX(frame),fingerY*scaleY(frame),false,150,done) }
+        } else {
+            if (corrections++ >= 3) { halt("위치 보정 실패 · 정지"); return }
+            fingerX += dx; fingerY += dy
+            if (fingerX<2 || fingerX>frame.width-2 || fingerY<2 || fingerY>frame.height-2) { halt("터치 범위를 벗어나는 배치 · 정지"); return }
+            status("블록 위치 보정 " + corrections)
+            gesture(epoch,Phase.ALIGN) { service,done -> service.moveHeld(fingerX*scaleX(frame),fingerY*scaleY(frame),true,420,done) }
+        }
+    }
+    private fun scaleX(frame: Game.Frame) = physicalWidth.toFloat()/frame.width
+    private fun scaleY(frame: Game.Frame) = physicalHeight.toFloat()/frame.height
+    private fun gesture(epoch: Int,next: Phase,action: (AutoService,(Boolean)->Unit)->Unit) {
+        inFlight = true; actionFloor = timestamp
+        main.post {
+            if (!valid(epoch)) return@post
+            val service = AutoService.live
+            if (service == null || (targetApp != null && service.foregroundPackage() != targetApp)) { halt("접근성 또는 게임 화면 연결 끊김"); return@post }
+            action(service) { ok ->
+                worker.post {
+                    if (!valid(epoch)) return@post
+                    inFlight = false
+                    if (!ok) { halt("터치가 취소되었습니다 · 다시 시작하세요"); return@post }
+                    phase = next; phaseAt = SystemClock.uptimeMillis(); nextReadAt = phaseAt+160
+                    stableSignature = ""; observed = null
+                }
+            }
+        }
+    }
+    override fun onDestroy() {
+        destroyed = true; halt("화면 공유 종료"); if (active === this) active = null
+        worker.removeCallbacks(loop)
+        worker.post {
+            display?.release(); display = null
+            reader?.close(); reader = null
+            vision.close(); cached = null; beforeImage = null
+            projection?.stop(); projection = null
+            thread.quitSafely()
+        }
+        super.onDestroy()
+    }
 }

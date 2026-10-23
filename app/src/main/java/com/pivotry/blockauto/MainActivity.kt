@@ -2,61 +2,65 @@ package com.pivotry.blockauto
 
 import android.app.Activity
 import android.content.Intent
+import android.media.projection.MediaProjectionConfig
 import android.media.projection.MediaProjectionManager
-import android.os.Build
-import android.os.Bundle
+import android.os.*
 import android.provider.Settings
 import android.widget.*
 
-class MainActivity:Activity(){
- private val CAPTURE=2001
- private lateinit var offsetLabel:TextView
- override fun onCreate(savedInstanceState:Bundle?){
-  super.onCreate(savedInstanceState)
-  val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(32,36,32,24)}
-  val scroll=ScrollView(this).apply{addView(root)}
-  setContentView(scroll)
-  fun label(text:String,size:Float=16f):TextView {
-   val v=TextView(this).apply{this.text=text;textSize=size;setPadding(0,8,0,14)}
-   root.addView(v);return v
-  }
-  label("Block Blast Auto v0.3",25f)
-  label("첨부한 709×1536 화면을 기준으로 보드와 노란 블록을 인식하여 자동 배치합니다.")
-  label("① 아래 버튼에서 접근성 서비스를 켜고, Block Blast Auto를 허용하세요.")
-  root.addView(Button(this).apply{text="접근성 설정 열기";setOnClickListener{startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))}})
-  label("② 화면 공유를 허용하고 블록 블라스트 게임으로 돌아가세요.")
-  root.addView(Button(this).apply{text="화면 공유 시작";setOnClickListener{
-   val m=getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-   @Suppress("DEPRECATION") startActivityForResult(m.createScreenCaptureIntent(),CAPTURE)
-  }})
-  label("③ 화면 우측 위의 플로팅 버튼에서 ▶ 자동 시작을 누르세요. 정지 버튼으로 언제든 멈출 수 있습니다.")
-  label("드래그 세로 보정: 블록이 위로 날아가면 값을 높이고, 아래로 떨어지면 낮추세요. 기본 +115px.")
-  val pref=getSharedPreferences("settings",MODE_PRIVATE)
-  offsetLabel=label("",15f)
-  val slider=SeekBar(this).apply{max=450;progress=(pref.getInt("dragYOffset",115)+100).coerceIn(0,450)}
-  slider.setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{
-   override fun onProgressChanged(b:SeekBar?,p:Int,fromUser:Boolean){
-    offsetLabel.text="현재 Y 보정: "+(p-100)+" px (기준 해상도)"
-    if(fromUser)pref.edit().putInt("dragYOffset",p-100).apply()
-   }
-   override fun onStartTrackingTouch(b:SeekBar?){}
-   override fun onStopTrackingTouch(b:SeekBar?){}
-  })
-  root.addView(slider);offsetLabel.text="현재 Y 보정: "+(slider.progress-100)+" px"
-  label("※ 현재 버전은 노란색 블록과 동일한 게임 UI를 가정하는 시험용 구현입니다. 화면 공유는 기기 내부에서만 처리하며 서버로 전송하지 않습니다.",13f)
-  root.addView(Button(this).apply{text="화면 공유 종료";setOnClickListener{
-   stopService(Intent(this@MainActivity,CaptureService::class.java))
-  }})
- }
- @Deprecated("Activity callback")
- override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?){
-  super.onActivityResult(requestCode,resultCode,data)
-  if(requestCode==CAPTURE && resultCode==RESULT_OK && data!=null){
-   val intent=Intent(this,CaptureService::class.java).apply{
-    putExtra("resultCode",resultCode);putExtra("data",data)
-   }
-   if(Build.VERSION.SDK_INT>=26)startForegroundService(intent) else startService(intent)
-   Toast.makeText(this,"게임으로 이동해 플로팅 버튼을 누르세요",Toast.LENGTH_LONG).show()
-  }
- }
+class MainActivity : Activity() {
+    private val captureRequest = 2001
+    private val main = Handler(Looper.getMainLooper())
+    private lateinit var state: TextView
+    private val refresh = object : Runnable {
+        override fun run() {
+            val service = CaptureService.active
+            state.text = "접근성: " + (if (AutoService.live != null) "연결됨" else "설정 필요") + "\n" +
+                (service?.statusMessage ?: "화면 공유를 시작하세요")
+            main.postDelayed(this,500)
+        }
+    }
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val dp = resources.displayMetrics.density
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((24*dp).toInt(),(24*dp).toInt(),(24*dp).toInt(),(32*dp).toInt())
+        }
+        setContentView(ScrollView(this).apply { addView(root) })
+        fun label(text: String,size: Float = 16f): TextView = TextView(this).apply {
+            this.text = text; textSize = size; setPadding(0,(8*dp).toInt(),0,(14*dp).toInt()); root.addView(this)
+        }
+        fun button(text: String,action: ()->Unit) { root.addView(Button(this).apply { this.text = text; setOnClickListener { action() } }) }
+        label("Block Blast Auto",27f)
+        label("0.4 · 화면으로 확인하고, 정확히 놓기",14f)
+        state = label("준비 중",16f).apply { setTextIsSelectable(true) }
+        label("1. 접근성을 연결하세요. 블록을 잡고 이동하는 데 사용합니다.")
+        button("접근성 설정 열기") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        label("2. 전체 화면 공유를 허용하세요. 화면은 기기 안에서만 분석하며 외부로 보내지 않습니다.")
+        button("화면 공유 시작") {
+            if (CaptureService.active != null) { Toast.makeText(this,"이미 공유 중입니다. 게임으로 돌아가세요",Toast.LENGTH_SHORT).show() }
+            else {
+                val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                val capture = if (Build.VERSION.SDK_INT >= 34) manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay()) else manager.createScreenCaptureIntent()
+                @Suppress("DEPRECATION") startActivityForResult(capture,captureRequest)
+            }
+        }
+        label("3. 블록 블라스트의 세로 게임 화면을 열고, 우측 위 ▶ 자동 시작을 누르세요.")
+        label("블록 잡기 → 떠 있는 위치 측정 → 판에 정렬 → 설치 확인 순서로 진행합니다. 잘못 읽거나 터치가 취소되면 자동으로 멈춥니다.",14f)
+        label("정지 버튼을 누르면 잡고 있던 블록을 아래 원래 자리로 돌립니다. 화면을 회전했거나 공유가 종료되면 다시 공유하세요.",14f)
+        button("자동 플레이 정지") { CaptureService.active?.halt("사용자가 정지했습니다") }
+        button("화면 공유 종료") { stopService(Intent(this,CaptureService::class.java)) }
+        label("게임 버전·시각 효과에 따라 인식이 달라질 수 있습니다. 실제 게임 고득점이나 무중단 플레이를 보장하지 않습니다.",12f)
+    }
+    override fun onResume() { super.onResume(); main.post(refresh) }
+    override fun onPause() { main.removeCallbacks(refresh); super.onPause() }
+    @Deprecated("Activity callback")
+    override fun onActivityResult(requestCode: Int,resultCode: Int,data: Intent?) {
+        super.onActivityResult(requestCode,resultCode,data)
+        if (requestCode == captureRequest && resultCode == RESULT_OK && data != null) {
+            startForegroundService(Intent(this,CaptureService::class.java).apply { putExtra("resultCode",resultCode); putExtra("data",data) })
+            Toast.makeText(this,"게임으로 이동해 ▶ 자동 시작을 누르세요",Toast.LENGTH_LONG).show()
+        }
+    }
 }

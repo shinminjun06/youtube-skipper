@@ -32,6 +32,28 @@ public final class CoreChecks {
         for(Planner.Move m:result.moves) {Rules.Placement p=Rules.place(board,square,m.x,m.y);check(p!=null,"planner returns legal moves");board=p.board;}
         check(Planner.best(-1L,java.util.Arrays.asList(one),20)==null,"no illegal fallback");
     }
+    static void alignment() throws Exception {
+        Game.Image before=load("empty-gold.png");Game.Frame frame=Recognizer.read(before);
+        Game.Shape shape=frame.shapes.get(1);
+        Game.Image after=new Game.Image(before.width,before.height,before.pixels.clone());
+        float ox=241,oy=1008;
+        for(int i=0;i<shape.piece.xs.length;i++) {
+            int x1=Math.round(ox+shape.piece.xs[i]*frame.cell+2),y1=Math.round(oy+shape.piece.ys[i]*frame.cell+2);
+            for(int y=y1;y<y1+frame.cell-4;y++)for(int x=x1;x<x1+frame.cell-4;x++)after.pixels[y*after.width+x]=shape.color;
+        }
+        DragAlignment.Origin found=DragAlignment.locate(after,before,frame,shape,350,1320);
+        check(found!=null,"find full-size lifted piece with unknown finger offset");
+        check(Math.abs(found.x-ox)<frame.cell*.12 && Math.abs(found.y-oy)<frame.cell*.12,"measure origin instead of fixed Y correction");
+        check(DragAlignment.locate(before,before,frame,shape,350,1320)==null,"unchanged tray is not a picked-up block");
+        Game.Frame unchanged=new Game.Frame(frame.board,frame.shapes,frame.left,frame.top,frame.cell,frame.width,frame.height,1);
+        MoveVerifier verifier=new MoveVerifier(frame,0,0,0);
+        check(!verifier.matches(unchanged),"gesture callback / unchanged shape count is not success");
+        java.util.List<Game.Shape> remain=new java.util.ArrayList<>(frame.shapes);remain.remove(0);
+        Game.Frame placed=new Game.Frame(7L,remain,frame.left,frame.top,frame.cell,frame.width,frame.height,1);
+        check(verifier.matches(placed),"exact predicted board plus consumed source accepted");
+        Game.Frame wrong=new Game.Frame(14L,remain,frame.left,frame.top,frame.cell,frame.width,frame.height,1);
+        check(!verifier.matches(wrong),"piece landed one column away is failure");
+    }
     static void recognition() throws Exception {
         Game.Frame f = Recognizer.read(load("empty-gold.png"));
         check(f != null, "real screenshot: must detect grid");
@@ -54,6 +76,7 @@ public final class CoreChecks {
     public static void main(String[] args) throws Exception {
         recognition();
         planning();
+        alignment();
         System.out.println("PASS "+checks+" core checks");
     }
 }
