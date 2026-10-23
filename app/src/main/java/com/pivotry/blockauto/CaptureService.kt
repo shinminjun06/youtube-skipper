@@ -24,7 +24,6 @@ class CaptureService : Service() {
     private val thread = HandlerThread("BlockBlast-control")
     private lateinit var worker: Handler
     private val generation = AtomicInteger()
-    private val vision = Vision()
     private var projection: MediaProjection? = null
     private var display: VirtualDisplay? = null
     private var reader: ImageReader? = null
@@ -152,7 +151,7 @@ class CaptureService : Service() {
         if (bounds.width() != physicalWidth || bounds.height() != physicalHeight) { halt("회전 감지 · 세로 화면에서 공유를 다시 시작하세요"); return }
         val img = reader?.acquireLatestImage()
         if (img != null) {
-            try { if (img.timestamp > timestamp) { cached = vision.copy(img); timestamp = img.timestamp } }
+            try { if (img.timestamp > timestamp) { cached = Vision.copy(img); timestamp = img.timestamp } }
             finally { img.close() }
         }
         // Static screens may not produce new virtual-display buffers. Re-observe the
@@ -257,7 +256,7 @@ class CaptureService : Service() {
         worker.post {
             display?.release(); display = null
             reader?.close(); reader = null
-            vision.close(); cached = null; beforeImage = null
+            cached = null; beforeImage = null
             projection?.stop(); projection = null
             thread.quitSafely()
         }

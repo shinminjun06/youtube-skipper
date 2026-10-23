@@ -65,11 +65,15 @@ public final class Recognizer {
             int c=im.at(l+(x+.5f)*p,t+(y+.5f)*p);
             if(light(c)<darkest){darkest=light(c);baseline=c;}
         }
+        if(hi(baseline)>145)return null; // no trustworthy empty-cell reference
         for(int y=0;y<8;y++)for(int x=0;x<8;x++) {
             int hit=0;
             for(float dy:new float[]{-.18f,0,.18f})for(float dx:new float[]{-.18f,0,.18f}) {
                 int c=im.at(l+(x+.5f+dx)*p,t+(y+.5f+dy)*p);
-                if(isTile(c)&&distance(c,baseline)>85)hit++;
+                if(distance(c,baseline)>85) {
+                    if(!isTile(c))return null; // unknown dark/monochrome tile is not empty
+                    hit++;
+                }
             }
             if(hit>=7)board|=1L<<(y*8+x);
             else if(hit>1)return null; // animation or partially covered cell

@@ -1,6 +1,8 @@
 package com.pivotry.blockauto.core;
 public final class DragAlignment {
     private DragAlignment() {}
+    private static final float[] SAMPLES={.22f,.5f,.78f};
+    private static final int[][] DIRECTIONS={{-1,0},{1,0},{0,-1},{0,1}};
     public static final class Origin {public final float x,y,confidence;Origin(float x,float y,float c){this.x=x;this.y=y;confidence=c;}}
     private static boolean same(int c,int target) {
         return Recognizer.isTile(c)&&Recognizer.hi(c)>Recognizer.hi(target)*.78f&&Recognizer.distance(c,target)<125;
@@ -9,11 +11,12 @@ public final class DragAlignment {
         int hits=0,total=0,novel=0,edges=0,clean=0;
         for(int i=0;i<p.xs.length;i++) {
             float xx=x+p.xs[i]*cell,yy=y+p.ys[i]*cell;
-            for(float dy:new float[]{.22f,.5f,.78f})for(float dx:new float[]{.22f,.5f,.78f}) {
+            if(!same(im.at(xx+cell*.5f,yy+cell*.5f),color))return -1;
+            for(float dy:SAMPLES)for(float dx:SAMPLES) {
                 float sx=xx+dx*cell,sy=yy+dy*cell;int c=im.at(sx,sy);total++;
                 if(same(c,color)){hits++;if(Recognizer.distance(c,before.at(sx,sy))>60)novel++;}
             }
-            for(int[] d:new int[][]{{-1,0},{1,0},{0,-1},{0,1}}) {
+            for(int[] d:DIRECTIONS) {
                 boolean neighbor=false;
                 for(int j=0;j<p.xs.length;j++)if(p.xs[j]==p.xs[i]+d[0]&&p.ys[j]==p.ys[i]+d[1]){neighbor=true;break;}
                 if(!neighbor) {
@@ -42,7 +45,7 @@ public final class DragAlignment {
         // Average equally good nearby fits to avoid picking one edge of a flat score plateau.
         float sx=0,sy=0;int count=0;
         for(float y=by-step;y<=by+step;y+=Math.max(1,step/4))for(float x=bx-step;x<=bx+step;x+=Math.max(1,step/4))
-            if(x>=0&&y>=0&&score(im,before,shape.piece,shape.color,x,y,cell)>=best-.001f){sx+=x;sy+=y;count++;}
+            if(x>=0&&y>=0&&x+shape.piece.w*cell<=im.width&&y+shape.piece.h*cell<=im.height&&score(im,before,shape.piece,shape.color,x,y,cell)>=best-.001f){sx+=x;sy+=y;count++;}
         return new Origin(count==0?bx:sx/count,count==0?by:sy/count,best);
     }
 }
