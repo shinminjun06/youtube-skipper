@@ -96,7 +96,7 @@ class CaptureService:Service() {
     if(result==null){main.post {status("블록 배치 불가 · 게임 종료 가능")};return@execute}
     val m=result.moves.first()
     val shape=frame.shapes[m.piece]
-    val yOffset=getSharedPreferences("settings",MODE_PRIVATE).getInt("dragYOffset",0)
+    val yOffset=getSharedPreferences("settings",MODE_PRIVATE).getInt("dragYOffset",115)
     val targetX=frame.left+(m.x+shape.piece.w*.5f)*frame.cell
     val targetY=frame.top+(m.y+shape.piece.h*.5f)*frame.cell+yOffset*frame.height/1536f
     previousBoard=frame.board;previousShapeCount=frame.shapes.size
