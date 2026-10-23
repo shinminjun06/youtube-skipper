@@ -17,8 +17,33 @@ jobs:
           gradle-version: '8.9'
       - name: Core regression checks (real screenshot fixtures)
         run: bash tools/check-core.sh
-      - run: gradle :app:assembleDebug --stacktrace
+      - run: gradle :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug --stacktrace
+      - name: Enable KVM
+        run: sudo chmod 666 /dev/kvm
+      - name: Native capture and continued-drag tests (controlled fixture)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -memory 2048
+          script: |
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb shell pm grant com.pivotry.blockauto android.permission.POST_NOTIFICATIONS
+            adb shell settings put secure enabled_accessibility_services com.pivotry.blockauto/com.pivotry.blockauto.AutoService
+            adb shell settings put secure accessibility_enabled 1
+            gradle :app:connectedDebugAndroidTest --stacktrace
       - uses: actions/upload-artifact@v4
         with:
           name: BlockBlastAuto-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+      - name: Test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlockBlastAuto-verification
+          path: |
+            app/build/reports/
+            app/build/outputs/androidTest-results/
