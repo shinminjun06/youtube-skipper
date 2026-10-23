@@ -30,11 +30,7 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -memory 2048
           script: |
-            adb install -r app/build/outputs/apk/debug/app-debug.apk
-            adb shell pm grant com.pivotry.blockauto android.permission.POST_NOTIFICATIONS
-            adb shell settings put secure enabled_accessibility_services com.pivotry.blockauto/com.pivotry.blockauto.AutoService
-            adb shell settings put secure accessibility_enabled 1
-            gradle :app:connectedDebugAndroidTest --stacktrace
+            bash tools/device-check.sh
       - uses: actions/upload-artifact@v4
         with:
           name: BlockBlastAuto-debug-apk
@@ -47,3 +43,4 @@ jobs:
           path: |
             app/build/reports/
             app/build/outputs/androidTest-results/
+            build/device-evidence/

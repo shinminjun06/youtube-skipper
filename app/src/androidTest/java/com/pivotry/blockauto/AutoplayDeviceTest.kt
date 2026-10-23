@@ -23,7 +23,14 @@ class AutoplayDeviceTest {
         while(System.currentTimeMillis()<until) { if(condition())return;Thread.sleep(80) }
         Assert.fail(message+" status="+CaptureService.active?.statusMessage)
     }
-    @Before fun setup() { ui;await("accessibility service") { AutoService.live!=null } }
+    private fun shell(command: String): String = android.os.ParcelFileDescriptor.AutoCloseInputStream(ui.executeShellCommand(command)).use { String(it.readBytes()) }
+    @Before fun setup() {
+        ui
+        // UTP may reinstall/force-stop the target after a workflow enables it.
+        shell("settings put secure enabled_accessibility_services com.pivotry.blockauto/com.pivotry.blockauto.AutoService")
+        shell("settings put secure accessibility_enabled 1")
+        await("accessibility service: "+shell("settings get secure enabled_accessibility_services")) { AutoService.live!=null }
+    }
     @After fun cleanup() {
         instrumentation.runOnMainSync { CaptureService.active?.halt("테스트 종료");context.stopService(Intent(context,CaptureService::class.java));TouchFixtureActivity.live?.finish() }
         Thread.sleep(500)
