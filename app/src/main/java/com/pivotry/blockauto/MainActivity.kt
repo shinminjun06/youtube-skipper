@@ -2,68 +2,61 @@ package com.pivotry.blockauto
 
 import android.app.Activity
 import android.content.Intent
-import android.graphics.Color
+import android.media.projection.MediaProjectionManager
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.view.Gravity
 import android.widget.*
 
-class MainActivity:Activity() {
- private val occupied=BooleanArray(64)
- private val inputs=ArrayList<EditText>()
- override fun onCreate(savedInstanceState:Bundle?) {
+class MainActivity:Activity(){
+ private val CAPTURE=2001
+ private lateinit var offsetLabel:TextView
+ override fun onCreate(savedInstanceState:Bundle?){
   super.onCreate(savedInstanceState)
-  val root=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setPadding(16,16,16,16) }
-  val scroll=ScrollView(this).apply {addView(root)}
+  val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(32,36,32,24)}
+  val scroll=ScrollView(this).apply{addView(root)}
   setContentView(scroll)
-  fun label(s:String)=TextView(this).apply {text=s;textSize=16f;setPadding(0,8,0,8);root.addView(this)}
-  label("Block Blast Auto v0.1 - 수동 보드 입력")
-  label("채워진 칸을 누르세요.")
-  val grid=GridLayout(this).apply {columnCount=8;rowCount=8};root.addView(grid)
-  val width=(resources.displayMetrics.widthPixels-48)/8
-  for(i in 0 until 64) {
-   val v=TextView(this).apply {
-    gravity=Gravity.CENTER
-    setBackgroundColor(Color.LTGRAY)
-    layoutParams=GridLayout.LayoutParams().apply {this.width=width-3;height=width-3;setMargins(1,1,1,1)}
-    setOnClickListener {
-     occupied[i]=!occupied[i]
-     setBackgroundColor(if(occupied[i]) Color.BLUE else Color.LTGRAY)
-    }
+  fun label(text:String,size:Float=16f):TextView {
+   val v=TextView(this).apply{this.text=text;textSize=size;setPadding(0,8,0,14)}
+   root.addView(v);return v
+  }
+  label("Block Blast Auto v0.2",25f)
+  label("첨부한 709×1536 화면을 기준으로 보드와 노란 블록을 인식하여 자동 배치합니다.")
+  label("① 아래 버튼에서 접근성 서비스를 켜고, Block Blast Auto를 허용하세요.")
+  root.addView(Button(this).apply{text="접근성 설정 열기";setOnClickListener{startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))}})
+  label("② 화면 공유를 허용하고 블록 블라스트 게임으로 돌아가세요.")
+  root.addView(Button(this).apply{text="화면 공유 시작";setOnClickListener{
+   val m=getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+   @Suppress("DEPRECATION") startActivityForResult(m.createScreenCaptureIntent(),CAPTURE)
+  }})
+  label("③ 화면 우측 위의 플로팅 버튼에서 ▶ 자동 시작을 누르세요. 정지 버튼으로 언제든 멈출 수 있습니다.")
+  label("드래그 세로 보정: 블록이 엉뚱한 줄에 놓이면 조정하세요.")
+  val pref=getSharedPreferences("settings",MODE_PRIVATE)
+  offsetLabel=label("",15f)
+  val slider=SeekBar(this).apply{max=300;progress=pref.getInt("dragYOffset",0)+150}
+  slider.setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{
+   override fun onProgressChanged(b:SeekBar?,p:Int,fromUser:Boolean){
+    offsetLabel.text="현재 Y 보정: "+(p-150)+" px (기준 해상도)"
+    if(fromUser)pref.edit().putInt("dragYOffset",p-150).apply()
    }
-   grid.addView(v)
-  }
-  label("블록 모양: # 채운 칸, . 빈칸, / 줄바꿈")
-  for(s in listOf("##/##","###","#./##")) {
-   val edit=EditText(this).apply {setSingleLine(true);setText(s)}
-   inputs.add(edit);root.addView(edit)
-  }
-  val info=labelResult(root)
-  root.addView(Button(this).apply {text="최적 배치 계산";setOnClickListener {
-   try {
-    val ps=inputs.map {Solver.parse(it.text.toString())}
-    var b=0L
-    for(i in 0..63) if(occupied[i]) b=b or (1L shl i)
-    val result=Solver.best(b,ps)
-    if(result==null) {info.text="세 블록을 모두 놓을 수 없습니다";AutoService.pending=null}
-    else {
-     info.text=result.moves.mapIndexed {j,m -> "${j+1}. 블록 ${m.piece+1}: 열 ${m.x}, 행 ${m.y}"}.joinToString("\n")
-     AutoService.pending=result.moves
-    }
-   } catch(e:Exception) {info.text="입력 오류: ${e.message}"}
+   override fun onStartTrackingTouch(b:SeekBar?){}
+   override fun onStopTrackingTouch(b:SeekBar?){}
+  })
+  root.addView(slider);offsetLabel.text="현재 Y 보정: "+(slider.progress-150)+" px"
+  label("※ 현재 버전은 노란색 블록과 동일한 게임 UI를 가정하는 시험용 구현입니다. 화면 공유는 기기 내부에서만 처리하며 서버로 전송하지 않습니다.",13f)
+  root.addView(Button(this).apply{text="화면 공유 종료";setOnClickListener{
+   stopService(Intent(this@MainActivity,CaptureService::class.java))
   }})
-  label("자동 드래그 실험 기능: 화면 좌표를 직접 설정해야 합니다.")
-  val coords=listOf("boardX","boardY","cell","trayX0","trayX1","trayX2","trayY")
-  val prefs=getSharedPreferences("coords",MODE_PRIVATE)
-  val edits=coords.map {key ->
-   val e=EditText(this).apply {hint=key;inputType=2;setText(prefs.getInt(key,0).let{if(it==0) "" else it.toString()})}
-   root.addView(e);e
-  }
-  root.addView(Button(this).apply {text="좌표 저장";setOnClickListener {
-   prefs.edit().apply { coords.forEachIndexed {i,k -> putInt(k,edits[i].text.toString().toIntOrNull()?:0)} }.apply()
-   Toast.makeText(this@MainActivity,"저장됨",Toast.LENGTH_SHORT).show()
-  }})
-  root.addView(Button(this).apply {text="접근성 서비스 설정 열기";setOnClickListener {startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))}})
  }
- private fun labelResult(root:LinearLayout)=TextView(this).apply {textSize=17f;root.addView(this)}
+ @Deprecated("Activity callback")
+ override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?){
+  super.onActivityResult(requestCode,resultCode,data)
+  if(requestCode==CAPTURE && resultCode==RESULT_OK && data!=null){
+   val intent=Intent(this,CaptureService::class.java).apply{
+    putExtra("resultCode",resultCode);putExtra("data",data)
+   }
+   if(Build.VERSION.SDK_INT>=26)startForegroundService(intent) else startService(intent)
+   Toast.makeText(this,"게임으로 이동해 플로팅 버튼을 누르세요",Toast.LENGTH_LONG).show()
+  }
+ }
 }
