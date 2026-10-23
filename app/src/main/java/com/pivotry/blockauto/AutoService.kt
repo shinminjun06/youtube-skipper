@@ -54,7 +54,7 @@ class AutoService:AccessibilityService() {
  fun drag(sx:Float,sy:Float,tx:Float,ty:Float,done:(Boolean)->Unit) {
   val path=Path().apply {moveTo(sx,sy);lineTo(tx,ty)}
   val gesture=GestureDescription.Builder()
-   .addStroke(GestureDescription.StrokeDescription(path,0,720)).build()
+   .addStroke(GestureDescription.StrokeDescription(path,0,1150)).build()
   val ok=dispatchGesture(gesture,object:GestureResultCallback(){
    override fun onCompleted(gestureDescription:GestureDescription?){done(true)}
    override fun onCancelled(gestureDescription:GestureDescription?){done(false)}
