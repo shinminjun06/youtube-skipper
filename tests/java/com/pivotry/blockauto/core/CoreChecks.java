@@ -331,7 +331,47 @@ public final class CoreChecks {
         check(ImageIO.read(new java.io.ByteArrayInputStream(entries.get("before.png"))).getRGB(0,0)==0xffff0000,"before image is real decoded pre-action PNG");
         check(ImageIO.read(new java.io.ByteArrayInputStream(entries.get("held.png"))).getRGB(0,0)==0xff0000ff,"held image differs from before and survives encoding");
     }
+
+    /** Palette/geometry sampled from the reported 709x1536 blue game screenshot. */
+    static void blueThemeGeometry() {
+        int w=709,h=1536,p=79,left=40,top=360;
+        int[] pix=new int[w*h];java.util.Arrays.fill(pix,0xff435d98);
+        for(int y=top;y<top+8*p;y++)for(int x=left;x<left+8*p;x++) {
+            boolean boundary=(x-left)%p<3||(y-top)%p<3;
+            pix[y*w+x]=boundary?0xff1c2648:0xff232b54;
+        }
+        int[][] cells={
+            {0,6,0x885be5},
+            {3,1,0x885be5},{3,2,0x5089d2},{3,3,0x64bc56},{3,4,0x64bc56},
+            {3,6,0x64bc56},{3,7,0x64bc56},
+            {4,1,0x885be5},{4,2,0x885be5},{4,3,0x885be5},{4,4,0x885be5},
+            {5,0,0x885be5},{5,1,0x885be5},{5,2,0x885be5},{5,3,0x885be5},{5,4,0x885be5},
+            {5,6,0xe0ac45},{6,3,0x885be5},{6,4,0x885be5},{6,6,0xe0ac45},
+            {7,2,0x5089d2},{7,4,0x5089d2},{7,6,0xe0ac45}
+        };
+        long expected=0;
+        for(int[] tile:cells) {
+            int row=tile[0],col=tile[1],color=0xff000000|tile[2];
+            expected|=1L<<(8*row+col);
+            for(int y=top+row*p+5;y<top+(row+1)*p-5;y++)
+                for(int x=left+col*p+5;x<left+(col+1)*p-5;x++)pix[y*w+x]=color;
+        }
+        // Only third tray slot remains: 2x2 sky-blue square.
+        for(int row=0;row<2;row++)for(int col=0;col<2;col++)
+            for(int y=1140+row*35+2;y<1140+(row+1)*35-2;y++)
+                for(int x=527+col*35+2;x<527+(col+1)*35-2;x++)pix[y*w+x]=0xff5089d2;
+        Recognizer.Detection d=Recognizer.analyze(new Game.Image(w,h,pix));
+        check(d.frame!=null,"blue geometry must read: "+d.code());
+        Game.Frame frame=d.frame;
+        check(Math.abs(frame.left-left)<4&&Math.abs(frame.top-top)<4&&Math.abs(frame.cell-p)<1,
+            "no shifted first-row columns on blue background");
+        check(frame.board==expected,"multicolor blue board matches all 23 occupied cells");
+        check(frame.shapes.size()==1&&frame.shapes.get(0).slot==2&&
+            frame.shapes.get(0).piece.key.equals("0,0;1,0;0,1;1,1;"),
+            "remaining blue 2x2 piece reads without missing or phantom blocks");
+    }
     public static void main(String[] args) throws Exception {
+        blueThemeGeometry();
         diagnosticArchive();
         highLift();
         mergedOuterFaces();
