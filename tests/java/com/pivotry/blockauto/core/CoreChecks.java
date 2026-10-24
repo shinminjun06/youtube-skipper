@@ -217,7 +217,7 @@ public final class CoreChecks {
             for(int i=0;i<8;i++)for(int y=(int)(geometry.top+i*geometry.cell+4);y<geometry.top+(i+1)*geometry.cell-4;y++)
                 for(int x=(int)(geometry.left+i*geometry.cell+4);x<geometry.left+(i+1)*geometry.cell-4;x++)pixels[y*709+x]=occupied;
             Game.Frame read=Recognizer.read(new Game.Image(709,1536,pixels));
-            check(read==null||read.board==0x8040201008040201L,"dark occupied reference must never invert empty/occupied cells "+Integer.toHexString(occupied));
+            check(read==null||read.board==0x8040201008040201L,"dark occupied reference must never invert empty/occupied cells "+Integer.toHexString(occupied)+(read==null?" REJECTED":" BOARD="+Long.toHexString(read.board)+" GEO="+read.left+","+read.top+","+read.cell));
         }
         for(int darkColor:new int[]{0xff803080,0xff266c8a,0xff8e3828}) {
             int[] pixels=original.pixels.clone();
