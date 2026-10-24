@@ -269,7 +269,57 @@ public final class CoreChecks {
             check(frame!=null&&frame.shapes.size()==1&&frame.shapes.get(0).piece.key.equals(expected),"merged outer faces must not disappear: "+expected);
         }
     }
+    static Game.Image lifted(Game.Image before,Game.Frame f,Game.Shape shape,float ox,float oy) {
+        Game.Image im=new Game.Image(before.width,before.height,before.pixels.clone());
+        for(int i=0;i<shape.piece.xs.length;i++) {
+            float left=ox+shape.piece.xs[i]*f.cell,top=oy+shape.piece.ys[i]*f.cell;
+            for(int y=(int)top+1;y<top+f.cell-1;y++)for(int x=(int)left+1;x<left+f.cell-1;x++) {
+                if(x<0||x>=im.width||y<0||y>=im.height)continue;
+                boolean trim=x<left+f.cell*.12||x>left+f.cell*.88||y<top+f.cell*.12||y>top+f.cell*.88;
+                im.pixels[y*im.width+x]=trim?0xffb58a45:shape.color;
+            }
+        }
+        return im;
+    }
+    static void highLift() throws Exception {
+        Game.Image before=load("purple-empty-red.png");Game.Frame f=Recognizer.read(before);
+        check(f!=null&&f.board==0&&f.shapes.size()==3,"new actual screenshot remains fully recognized");
+        Game.Shape shape=f.shapes.get(0);check(shape.piece.key.equals("0,0;0,1;0,2;"),"literal vertical3 in latest screenshot");
+        float fx=f.width*.5f,fy=Math.min(f.height-f.cell*.7f,f.top+8*f.cell+shape.piece.h*f.cell*.5f+2*f.cell);
+        for(float lift:new float[]{1.85f,3.4f,4.2f}) {
+            float ox=fx-f.cell*.5f,oy=fy-lift*f.cell-1.5f*f.cell;
+            DragAlignment.Origin o=DragAlignment.locate(lifted(before,f,shape,ox,oy),before,f,shape,fx,fy);
+            check(o!=null&&Math.abs(o.x-ox)<f.cell*.13&&Math.abs(o.y-oy)<f.cell*.13,"measure held origin with "+lift+"cell lift, including board overlap");
+        }
+        check(DragAlignment.locate(before,before,f,shape,fx,fy)==null,"no pickup is not a held block despite unchanged red tray");
+        Game.Image gold=load("empty-gold.png");Game.Frame gf=Recognizer.read(gold);Game.Shape bar=gf.shapes.get(0);
+        Game.Image oldBoard=new Game.Image(gold.width,gold.height,gold.pixels.clone());
+        float x=230,y=gf.top+5*gf.cell;
+        tile(oldBoard,x+2*gf.cell,y,gf.cell);
+        Game.Image changed=new Game.Image(gold.width,gold.height,oldBoard.pixels.clone());
+        tile(changed,x,y,gf.cell);tile(changed,x+gf.cell,y,gf.cell);
+        check(DragAlignment.locate(changed,oldBoard,gf,bar,350,1320)==null,"staging search cannot borrow unchanged old tile to complete a new piece");
+    }
+    static void diagnosticArchive() throws Exception {
+        Game.Image before=new Game.Image(2,1,new int[]{0xffff0000,0xff00ff00});
+        Game.Image held=new Game.Image(2,1,new int[]{0xff0000ff,0xffffffff});
+        java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream();
+        new FailureTrace(before,held,"{\"phase\":\"PICKED\"}").writeZip(bytes,(im,out)-> {
+            BufferedImage png=new BufferedImage(im.width,im.height,BufferedImage.TYPE_INT_ARGB);
+            png.setRGB(0,0,im.width,im.height,im.pixels,0,im.width);ImageIO.write(png,"png",out);
+        });
+        java.util.Map<String,byte[]> entries=new java.util.HashMap<>();
+        try(java.util.zip.ZipInputStream zip=new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(bytes.toByteArray()))) {
+            java.util.zip.ZipEntry e;while((e=zip.getNextEntry())!=null)entries.put(e.getName(),zip.readAllBytes());
+        }
+        check(entries.size()==3&&entries.containsKey("before.png")&&entries.containsKey("held.png"),"diagnostic zip has both distinct frames and metadata");
+        check(new String(entries.get("metadata.json"),java.nio.charset.StandardCharsets.UTF_8).equals("{\"phase\":\"PICKED\"}"),"diagnostic stage remains associated with frozen images");
+        check(ImageIO.read(new java.io.ByteArrayInputStream(entries.get("before.png"))).getRGB(0,0)==0xffff0000,"before image is real decoded pre-action PNG");
+        check(ImageIO.read(new java.io.ByteArrayInputStream(entries.get("held.png"))).getRGB(0,0)==0xff0000ff,"held image differs from before and survives encoding");
+    }
     public static void main(String[] args) throws Exception {
+        diagnosticArchive();
+        highLift();
         mergedOuterFaces();
         purpleFrames();
         diagnostics();

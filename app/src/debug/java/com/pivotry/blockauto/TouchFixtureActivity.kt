@@ -28,13 +28,15 @@ class TouchFixtureActivity : Activity() {
         super.onCreate(state); live = this
         val dark = intent.getBooleanExtra("dark",false)
         val plated = intent.getBooleanExtra("plated",false)
+        val liftCells = intent.getFloatExtra("lift",1.85f)
+        val ignorePickup = intent.getBooleanExtra("ignorePickup",false)
         window.setDecorFitsSystemWindows(false)
         game = object : View(this) {
             val paint = Paint(Paint.ANTI_ALIAS_FLAG)
             val left get() = width*.058f
             val top get() = height*.2357f
             val cell get() = width*.8858f/8
-            val lift get() = cell*1.85f // deliberately differs from the old +115px constant
+            val lift get() = cell*liftCells // deliberately differs from the old +115px constant
             fun rect(l: Float,t: Float,w: Float,h: Float,c: Int) { paint.color=c; canvasRef!!.drawRect(l,t,l+w,t+h,paint) }
             var canvasRef: Canvas? = null
             fun tile(x: Float,y: Float,size: Float) {
@@ -75,7 +77,7 @@ class TouchFixtureActivity : Activity() {
                 when(event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
                         downs++;fingerX=event.x;fingerY=event.y
-                        for(slot in 0..2)if(available[slot]) {
+                        for(slot in 0..2)if(available[slot]&&!ignorePickup) {
                             val p=pieces[slot];val unit=cell*.447f
                             val rx=(event.x-trayX(slot,p))/unit;val ry=(event.y-trayY(p))/unit
                             if(p.xs.indices.any { floor(rx).toInt()==p.xs[it]&&floor(ry).toInt()==p.ys[it] }) {

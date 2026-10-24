@@ -4,6 +4,9 @@ import android.app.*
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
+import android.graphics.Bitmap
+import android.net.Uri
+import org.json.JSONObject
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.ImageReader
@@ -58,6 +61,7 @@ class CaptureService : Service() {
     private var retries = 0
     private var lastDetectionCode = ""
     private var noForegroundSince = 0L
+    @Volatile private var failureTrace: FailureTrace? = null
 
     override fun onBind(intent: Intent?) = null
     override fun onCreate() {
@@ -110,7 +114,7 @@ class CaptureService : Service() {
         AutoService.live?.setRunning(true)
         worker.post {
             if (!valid(epoch)) return@post
-            phase = Phase.IDLE; inFlight = false; beforeImage = null; before = null; verifier = null
+            phase = Phase.IDLE; inFlight = false; beforeImage = null; before = null; verifier = null; failureTrace = null
             stableSignature = ""; observed = null; retries = 0; retrySignature = ""; noForegroundSince = 0L
             actionFloor = Long.MIN_VALUE; phaseAt = SystemClock.uptimeMillis()
             status("게임판 확인 중")
@@ -246,7 +250,11 @@ class CaptureService : Service() {
         if (!valid(epoch)) return
         if (found == null) {
             observed = null
-            if (now-phaseAt > 2200) halt("잡힌 블록 위치가 불확실해 정지 · 블록을 원위치로 돌립니다")
+            if (now-phaseAt > 2200) {
+                freezeFailure(image,"NO_HELD_MATCH")
+                val stage = if (phase == Phase.PICKED) "잡기" else "판 정렬"
+                halt(stage + " 위치 측정 실패 · 앱에서 진단 파일을 저장할 수 있습니다")
+            }
             return
         }
         val old = observed
@@ -265,6 +273,36 @@ class CaptureService : Service() {
             if (fingerX<2 || fingerX>frame.width-2 || fingerY<2 || fingerY>frame.height-2) { halt("터치 범위를 벗어나는 배치 · 정지"); return }
             status("블록 위치 보정 " + corrections)
             gesture(epoch,Phase.ALIGN) { service,done -> service.moveHeld(fingerX*scaleX(frame),fingerY*scaleY(frame),true,420,done) }
+        }
+    }
+    private fun freezeFailure(image: Game.Image,reason: String) {
+        val original = beforeImage ?: return
+        val frame = before ?: return
+        val shape = selected ?: return
+        val data = JSONObject().put("version",BuildConfig.VERSION_NAME).put("reason",reason).put("phase",phase.name)
+            .put("width",image.width).put("height",image.height).put("physicalWidth",physicalWidth).put("physicalHeight",physicalHeight)
+            .put("gridLeft",frame.left).put("gridTop",frame.top).put("cell",frame.cell).put("board",java.lang.Long.toHexString(frame.board))
+            .put("slot",shape.slot).put("piece",shape.piece.key).put("pickX",shape.pickX).put("pickY",shape.pickY)
+            .put("fingerX",fingerX).put("fingerY",fingerY).put("targetX",targetX).put("targetY",targetY).put("uptimeMillis",SystemClock.uptimeMillis())
+        failureTrace = FailureTrace(original,image,data.toString(2))
+        android.util.Log.i("BlockBlastAuto","held match failed " + data.toString())
+    }
+    fun hasDiagnostics() = failureTrace != null
+    fun saveDiagnostics(uri: Uri,done: (String?)->Unit) {
+        val trace = failureTrace
+        if (trace == null) { main.post { done("저장할 위치 측정 실패 기록이 없습니다") }; return }
+        halt("진단 저장 · 자동 플레이 정지")
+        worker.post {
+            val error = try {
+                val output = contentResolver.openOutputStream(uri,"w") ?: throw java.io.IOException("출력 파일을 열 수 없습니다")
+                output.use { stream -> trace.writeZip(stream) { image,destination ->
+                    val bitmap = Bitmap.createBitmap(image.pixels,image.width,image.height,Bitmap.Config.ARGB_8888)
+                    try { if (!bitmap.compress(Bitmap.CompressFormat.PNG,100,destination)) throw java.io.IOException("PNG 인코딩 실패") }
+                    finally { bitmap.recycle() }
+                } }
+                null
+            } catch (e: Exception) { "진단 저장 실패: " + e.javaClass.simpleName }
+            main.post { done(error) }
         }
     }
     private fun scaleX(frame: Game.Frame) = physicalWidth.toFloat()/frame.width

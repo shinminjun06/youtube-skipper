@@ -10,6 +10,7 @@ import android.widget.*
 
 class MainActivity : Activity() {
     private val captureRequest = 2001
+    private val diagnosticRequest = 2002
     private val main = Handler(Looper.getMainLooper())
     private lateinit var state: TextView
     private val refresh = object : Runnable {
@@ -33,7 +34,7 @@ class MainActivity : Activity() {
         }
         fun button(text: String,action: ()->Unit) { root.addView(Button(this).apply { this.text = text; setOnClickListener { action() } }) }
         label("Block Blast Auto",27f)
-        label("0.5.1 · 테두리 인식과 자동 배치 진행 표시",14f)
+        label("0.5.2 · 떠 있는 블록 탐색과 실패 순간 진단",14f)
         state = label("준비 중",16f).apply { setTextIsSelectable(true) }
         label("1. 접근성을 연결하세요. 블록을 잡고 이동하는 데 사용합니다.")
         button("접근성 설정 열기") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
@@ -50,6 +51,17 @@ class MainActivity : Activity() {
         label("블록 잡기 → 떠 있는 위치 측정 → 판에 정렬 → 설치 확인 순서로 진행합니다. 잘못 읽거나 터치가 취소되면 자동으로 멈춥니다.",14f)
         label("정지 버튼은 현재 터치를 취소합니다. 잡고 있던 블록은 게임에서 원위치로 돌아옵니다. 화면을 회전했거나 공유가 종료되면 다시 공유하세요.",14f)
         button("자동 플레이 정지") { CaptureService.active?.halt("사용자가 정지했습니다") }
+        button("위치 측정 실패 진단 파일 저장") {
+            val service = CaptureService.active
+            if (service?.hasDiagnostics() != true) Toast.makeText(this,"위치 측정 실패 후, 화면 공유를 종료하기 전에 저장할 수 있습니다",Toast.LENGTH_LONG).show()
+            else {
+                service.halt("진단 저장 준비")
+                @Suppress("DEPRECATION") startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE); type = "application/zip"; putExtra(Intent.EXTRA_TITLE,"BlockBlastAuto-Diagnostics.zip")
+                },diagnosticRequest)
+            }
+        }
+        label("진단 ZIP에는 조작 직전과 실패 직전의 게임 화면 및 좌표가 포함됩니다. 저장 버튼을 눌렀을 때만 파일을 만들며 자동으로 전송하지 않습니다.",12f)
         button("화면 공유 종료") { stopService(Intent(this,CaptureService::class.java)) }
         label("게임 버전·시각 효과에 따라 인식이 달라질 수 있습니다. 실제 게임 고득점이나 무중단 플레이를 보장하지 않습니다.",12f)
     }
@@ -58,6 +70,12 @@ class MainActivity : Activity() {
     @Deprecated("Activity callback")
     override fun onActivityResult(requestCode: Int,resultCode: Int,data: Intent?) {
         super.onActivityResult(requestCode,resultCode,data)
+        if (requestCode == diagnosticRequest && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            val service = CaptureService.active
+            if (service == null) Toast.makeText(this,"화면 공유가 종료되어 진단 기록이 없습니다",Toast.LENGTH_LONG).show()
+            else service.saveDiagnostics(uri) { error -> Toast.makeText(this,error ?: "진단 ZIP을 저장했습니다",Toast.LENGTH_LONG).show() }
+        }
         if (requestCode == captureRequest && resultCode == RESULT_OK && data != null) {
             startForegroundService(Intent(this,CaptureService::class.java).apply { putExtra("resultCode",resultCode); putExtra("data",data) })
             Toast.makeText(this,"게임으로 이동해 ▶ 자동 시작을 누르세요",Toast.LENGTH_LONG).show()
