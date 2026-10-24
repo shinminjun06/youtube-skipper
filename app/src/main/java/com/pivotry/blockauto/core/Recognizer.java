@@ -104,33 +104,47 @@ public final class Recognizer {
         // Empty cells have the same interior material at center and all four
         // inset corners. An occupied dark center is NOT a background reference.
         // Two different flat dark materials are ambiguous: reject, never invert.
-        int baseline=0;boolean hasReference=false;
-        for(int y=0;y<8;y++)for(int x=0;x<8;x++) {
-            int c=im.at(l+(x+.5f)*p,t+(y+.5f)*p);
-            if(hi(c)>195)continue;
-            boolean uniform=true;
-            for(float dy:new float[]{.20f,.80f})for(float dx:new float[]{.04f,.96f})
-                if(distance(c,im.at(l+(x+dx)*p,t+(y+dy)*p))>32)uniform=false;
-            if(!uniform)continue;
-            if(hasReference&&distance(c,baseline)>20)return failure(Issue.BOARD_REFERENCE,"AMBIGUOUS_EMPTY_REFERENCE",-1,-1,-1);
-            if(!hasReference){baseline=c;hasReference=true;}
+        // Instead of comparing every tile against the FIRST dark tile,
+        // estimate the empty material from the largest cluster of all 64
+        // interior centers. This works with multicolored blocks and changing
+        // backgrounds, including subtle gradients on blue/brown themes.
+        int[] centers=new int[64];
+        for(int y=0;y<8;y++)for(int x=0;x<8;x++)
+            centers[y*8+x]=im.at(l+(x+.5f)*p,t+(y+.5f)*p);
+        int bestIndex=-1,bestCount=0;
+        for(int i=0;i<64;i++) {
+            int count=0;
+            for(int j=0;j<64;j++)if(distance(centers[i],centers[j])<=28)count++;
+            if(count>bestCount){bestCount=count;bestIndex=i;}
         }
-        if(!hasReference)return failure(Issue.BOARD_REFERENCE,"NO_EMPTY_REFERENCE",-1,-1,-1);
+        // Without an identifiable background there is no safe way to map
+        // occupied/empty tiles. Do not invent a board or issue a bad hint.
+        if(bestCount<5)return failure(Issue.BOARD_REFERENCE,"NO_DOMINANT_EMPTY_COLOR",-1,-1,-1);
+        int rr=0,gg=0,bb=0,nref=0;
+        for(int c:centers)if(distance(c,centers[bestIndex])<=28){
+            rr+=r(c);gg+=g(c);bb+=b(c);nref++;
+        }
+        int baseline=((rr/nref)<<16)|((gg/nref)<<8)|(bb/nref);
         for(int y=0;y<8;y++)for(int x=0;x<8;x++) {
-            int hit=0,unknown=0;
-            int center=im.at(l+(x+.5f)*p,t+(y+.5f)*p);
-            for(float dy:new float[]{-.18f,0,.18f})for(float dx:new float[]{-.18f,0,.18f}) {
+            int idx=y*8+x,center=centers[idx];
+            int emptyVotes=0,tileVotes=0,unknownVotes=0;
+            for(float dy:new float[]{-.17f,0f,.17f})for(float dx:new float[]{-.17f,0f,.17f}) {
                 int c=im.at(l+(x+.5f+dx)*p,t+(y+.5f+dy)*p);
-                if(distance(c,baseline)>20) {
-                    // A beveled tile may have dark, desaturated edge samples.
-                    // Trust a coherent 3x3 interior only when its center is
-                    // clearly different from the empty-board material.
-                    if(!isTile(c))unknown++;
-                    else hit++;
-                }
+                int delta=distance(c,baseline);
+                if(delta<=32) emptyVotes++;
+                else if(delta>=42 && faceCandidate(c,baseline))tileVotes++;
+                else unknownVotes++;
             }
-            if(hit>=6 && isTile(center) && unknown<=3)board|=1L<<(y*8+x);
-            else if(hit>1 || unknown>1)return failure(Issue.BOARD_CELL,"PARTIAL_OR_UNKNOWN_CELL",-1,y,x);
+            if(emptyVotes>=7) {
+                // Flat, near-background dark tiles must not be silently
+                // interpreted as free space.
+                if(distance(center,baseline)>32)
+                    return failure(Issue.BOARD_CELL,"AMBIGUOUS_CELL",-1,y,x);
+            } else if(tileVotes>=6 && distance(center,baseline)>=42) {
+                board|=1L<<idx;
+            } else {
+                return failure(Issue.BOARD_CELL,"MIXED_CELL_MATERIAL",-1,y,x);
+            }
         }
         List<Game.Shape> shapes=new ArrayList<>();
         // A completed line is an animation, not a stable actionable game board.
