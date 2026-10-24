@@ -125,7 +125,7 @@ class CaptureService : Service() {
     }
     fun halt(reason: String) {
         running = false; generation.incrementAndGet(); targetApp = null
-        main.post { AutoService.live?.abortHold(); AutoService.live?.clearGuide(); AutoService.live?.setRunning(false) }
+        main.post { AutoService.live?.abortHold(); AutoService.live?.clearGuide(true); AutoService.live?.setRunning(false) }
         status(reason)
     }
     fun checkForeground() {
