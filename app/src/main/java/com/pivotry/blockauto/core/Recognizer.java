@@ -117,16 +117,20 @@ public final class Recognizer {
         }
         if(!hasReference)return failure(Issue.BOARD_REFERENCE,"NO_EMPTY_REFERENCE",-1,-1,-1);
         for(int y=0;y<8;y++)for(int x=0;x<8;x++) {
-            int hit=0;
+            int hit=0,unknown=0;
+            int center=im.at(l+(x+.5f)*p,t+(y+.5f)*p);
             for(float dy:new float[]{-.18f,0,.18f})for(float dx:new float[]{-.18f,0,.18f}) {
                 int c=im.at(l+(x+.5f+dx)*p,t+(y+.5f+dy)*p);
                 if(distance(c,baseline)>20) {
-                    if(!isTile(c))return failure(Issue.BOARD_CELL,"UNKNOWN_COLOR",-1,y,x); // unknown dark/monochrome tile is not empty
-                    hit++;
+                    // A beveled tile may have dark, desaturated edge samples.
+                    // Trust a coherent 3x3 interior only when its center is
+                    // clearly different from the empty-board material.
+                    if(!isTile(c))unknown++;
+                    else hit++;
                 }
             }
-            if(hit>=7)board|=1L<<(y*8+x);
-            else if(hit>1)return failure(Issue.BOARD_CELL,"PARTIAL_CELL",-1,y,x); // animation or partially covered cell
+            if(hit>=6 && isTile(center) && unknown<=3)board|=1L<<(y*8+x);
+            else if(hit>1 || unknown>1)return failure(Issue.BOARD_CELL,"PARTIAL_OR_UNKNOWN_CELL",-1,y,x);
         }
         List<Game.Shape> shapes=new ArrayList<>();
         // A completed line is an animation, not a stable actionable game board.
