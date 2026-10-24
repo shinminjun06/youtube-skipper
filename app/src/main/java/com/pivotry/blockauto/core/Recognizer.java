@@ -214,7 +214,7 @@ public final class Recognizer {
                 && distance(c,localBackground)>68
                 && (hi(c)>hi(localBackground)+25 || distance(c,material)>115);
             boolean lightUnknown=unknownBright && distance(c,localBackground)>75;
-            boolean lowContrastForeign=!face && isTile(c) && hi(c)<hi(bg)+15 && distance(c,bg)>28 && hueDistance(c,material)>.3f;
+            boolean lowContrastForeign=!face && isTile(c) && distance(c,bg)>28 && (hi(c)<hi(bg)+15 || (distance(c,material)>85 && distance(c,localBackground)>70));
             unexplained[y*rw+x]=!face&&(foreign||lightUnknown||lowContrastForeign);
             if(face) {
                 modeled++;
