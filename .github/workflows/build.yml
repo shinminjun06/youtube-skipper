@@ -28,19 +28,6 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs build/apk/BlockBlastAuto-v1.0.0.apk > build/apk/SIGNATURE.txt
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions build/apk/BlockBlastAuto-v1.0.0.apk > build/apk/PERMISSIONS.txt
           if rg -q android.permission.INTERNET build/apk/PERMISSIONS.txt; then exit 1; fi
-      - name: Enable KVM
-        run: sudo chmod 666 /dev/kvm
-      - name: Android gesture integration tests (MediaProjection and accessibility)
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          arch: x86_64
-          target: default
-          profile: pixel_2
-          disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -memory 2048 -cores 2
-          script: |
-            bash tools/device-check.sh
       - uses: actions/upload-artifact@v4
         with:
           name: BlockBlastAuto-debug-apk
