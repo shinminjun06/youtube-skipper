@@ -27,7 +27,16 @@ public final class Planner {
             for(int pattern:new int[]{row,col})for(int n=3;n<=5;n++)for(int x=0;x<=8-n;x++)
                 if((pattern&(((1<<n)-1)<<x))==0)lines++;
         }
-        return empty*1.8+open2*.75+open3*2.8+lines*.14-isolated*7;
+        int square3=0,horizontal5=0,vertical5=0;
+        for(int y=0;y<8;y++)for(int x=0;x<8;x++) {
+            if(x<=5&&y<=5&&(b&(0x70707L<<(8*y+x)))==0)square3++;
+            if(x<=3&&(b&(31L<<(8*y+x)))==0)horizontal5++;
+            if(y<=3&&(b&(0x0101010101L<<(8*y+x)))==0)vertical5++;
+        }
+        double largeAccess=Math.min(4,square3)*18.0+
+            Math.min(4,horizontal5)*5.0+Math.min(4,vertical5)*5.0;
+        return empty*1.8+open2*.75+open3*2.8+lines*.14-isolated*12+
+            largeAccess+(square3==0?-36.0:0.0);
     }
     /** Bounded beam over all visible orders and legal placements, replanned per move. */
     public static Result best(long board,List<Game.Piece> pieces,int milliseconds){
