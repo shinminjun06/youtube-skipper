@@ -35,6 +35,9 @@ class CaptureService : Service() {
     private var nextReadAt = 0L
     private var stableSignature = ""
     private var stableAt = 0L
+    private var lastPlanSignature = ""
+    private var lastPlanChain = -1
+    private var lastPlanMisses = -1
     private var lastDetectionCode = ""
     private val scoreTracker = ScoreTracker()
     private var noForegroundSince = 0L
@@ -86,6 +89,7 @@ class CaptureService : Service() {
         worker.post {
             scoreTracker.seedDisplayedCombo(value)
             stableSignature = ""
+            lastPlanSignature = ""
             status("콤보 기준 설정: " + value)
         }
     }
@@ -97,7 +101,7 @@ class CaptureService : Service() {
         AutoService.live?.setRunning(true)
         worker.post {
             if (!valid(epoch)) return@post
-            stableSignature = ""; noForegroundSince = 0L
+            stableSignature = ""; lastPlanSignature = ""; noForegroundSince = 0L
             scoreTracker.reset()
             scoreTracker.seedDisplayedCombo(getSharedPreferences("score",MODE_PRIVATE).getInt("display_combo",0))
             status("게임판 확인 중")
@@ -163,6 +167,7 @@ class CaptureService : Service() {
         if (!valid(epoch)) return
         if (frame == null) {
             AutoService.live?.clearGuide()
+            lastPlanSignature = ""
             val code = detection.code()
             if (code != lastDetectionCode) {
                 lastDetectionCode = code
@@ -173,7 +178,7 @@ class CaptureService : Service() {
             return
         }
         lastDetectionCode = ""
-        if (frame.shapes.isEmpty()) { AutoService.live?.clearGuide(); stableSignature = ""; status("블록 대기 중 또는 게임 종료"); return }
+        if (frame.shapes.isEmpty()) { AutoService.live?.clearGuide(); lastPlanSignature = ""; stableSignature = ""; status("블록 대기 중 또는 게임 종료"); return }
         if (!stable(frame.signature(),now)) { status("판·블록 " + frame.shapes.size + "개 확인 · 화면 안정화 중"); return }
         scoreTracker.observe(frame)
         // SurfaceView-based games can expose no accessibility root.
@@ -187,8 +192,17 @@ class CaptureService : Service() {
             }
         } else noForegroundSince = 0L
         if (targetApp != null && app != null && targetApp != app) { halt("앱 전환 감지"); return }
-        status("배치 계산 중 · 블록 " + frame.shapes.size + "개")
-        val result = Planner.best(frame.board,frame.shapes.map { it.piece },220,scoreTracker.combo(),scoreTracker.misses())
+        val signature = frame.signature()
+        val chain = scoreTracker.combo()
+        val missed = scoreTracker.misses()
+        if (signature == lastPlanSignature && chain == lastPlanChain && missed == lastPlanMisses) return
+        status("최적 수순 탐색 중 · 블록 " + frame.shapes.size + "개")
+        // Manual advice can use a larger search budget; unchanged frames are
+        // memoized above so no costly re-search happens each capture frame.
+        val result = Planner.best(frame.board,frame.shapes.map { it.piece },500,chain,missed)
+        lastPlanSignature = signature
+        lastPlanChain = chain
+        lastPlanMisses = missed
         if (!valid(epoch)) return
         if (result == null || result.moves.size != frame.shapes.size) {
             AutoService.live?.clearGuide(true)
