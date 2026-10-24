@@ -475,7 +475,27 @@ public final class CoreChecks {
             "no guide does not copy entire screenshot");
     }
 
+    static void comboCaptionDetection() {
+        check(ComboText.displayed("COMBO 43")==43,"explicit English combo caption");
+        check(ComboText.displayed("Combo x 100")==100,"multiplication-prefix caption");
+        check(ComboText.displayed("Combo × 255")==255,"Unicode multiplier caption");
+        check(ComboText.displayed("Combo: 1,234")==1234,"comma grouping is not truncated");
+        check(ComboText.displayed("COMBO 99\\n+440")==99,"ignore trailing scored points");
+        check(ComboText.displayed("86964\\n86964")==-1,"large score is never a combo");
+        check(ComboText.displayed("👑 86964\\nCOMBO\\n86964")==-1,
+            "label without a nearby numeric token is not enough to trust a score");
+        check(ComboText.displayed("COMBO")==-1,"numberless combo cannot anchor chain");
+        check(ComboText.displayed("COMBO 0")==-1,"zero caption is not reliable");
+        check(ComboText.displayed("COMBO 100001")==-1,"out-of-range caption ignored");
+        check(ComboText.displayed("COMBO 12 COMBO 20")==-1,"disagreeing captions ignored");
+        ScoreTracker inferred=new ScoreTracker();
+        inferred.observeDisplayedCombo(100);
+        check(inferred.combo()==101,"explicit displayed 100 seeds baseline internal 101");
+        inferred.observeDisplayedCombo(-1);
+        check(inferred.combo()==101,"failed OCR does not reset known chain");
+    }
     public static void main(String[] args) throws Exception {
+        comboCaptionDetection();
         highScorePlanning();
         guideOverlaySanitization();
         brownThemeGeometry();
