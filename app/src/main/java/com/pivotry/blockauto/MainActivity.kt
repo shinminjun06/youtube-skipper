@@ -35,22 +35,7 @@ class MainActivity : Activity() {
         label("Block Blast Advisor",27f)
         label("${BuildConfig.VERSION_NAME} · 고득점·생존 추천",14f)
         state = label("준비 중",16f).apply { setTextIsSelectable(true) }
-        label("고득점 추천 모드 · 현재 게임 화면에 표시된 콤보 숫자를 입력하세요. 예: COMBO 100이면 100. 콤보가 없다면 0.",14f)
-        val comboInput = EditText(this).apply {
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER
-            hint = "현재 표시 콤보 (기본 0)"
-            setText(getSharedPreferences("score",MODE_PRIVATE).getInt("display_combo",0).toString())
-        }
-        root.addView(comboInput)
-        button("현재 콤보 적용") {
-            val visible = comboInput.text.toString().toIntOrNull()?.coerceIn(0,99999)
-            if(visible==null) Toast.makeText(this,"숫자로 입력하세요",Toast.LENGTH_SHORT).show()
-            else {
-                getSharedPreferences("score",MODE_PRIVATE).edit().putInt("display_combo",visible).apply()
-                CaptureService.active?.setDisplayedCombo(visible)
-                Toast.makeText(this,"콤보 "+visible+" 기준으로 점수 최적화",Toast.LENGTH_SHORT).show()
-            }
-        }
+        label("콤보 숫자는 게임 화면에 표시될 때 자동 인식합니다. 표시되지 않을 때는 직접 확인한 줄 삭제 기록으로 추적합니다.",14f)
         label("1. 접근성을 연결하세요. 게임 위에 배치 위치를 표시하기 위해 사용합니다. 직접 게임을 조작하지 않습니다.")
         button("접근성 설정 열기") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         label("2. 전체 화면 공유를 허용하세요. 화면은 기기 안에서만 분석하며 외부로 보내지 않습니다.")
