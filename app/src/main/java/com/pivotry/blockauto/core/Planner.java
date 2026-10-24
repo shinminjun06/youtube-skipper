@@ -128,10 +128,53 @@ public final class Planner {
             if(beam.size()>256)beam=new ArrayList<>(beam.subList(0,256));
             if(exhausted)break;
         }
+        // If the bounded high-score beam never reached a full hand, run a
+        // narrow, ordered feasibility search before accepting partial play.
+        // This prevents search timeouts/pruning from masquerading as a blocked
+        // tray. It does not assert anything about the unknown NEXT tray.
+        if(full==null && pieces.size()>1) {
+            State fallback=completeTray(board,pieces,initialCombo,initialMisses);
+            if(fallback!=null)full=fallback;
+        }
         // The solver NEVER intentionally prefers a partial line-clear route
         // over a full-hand route. The next tray is hidden, so future survival
         // cannot be promised mathematically.
         State chosen=full!=null?full:partial;
         return chosen==null?null:new Result(Collections.unmodifiableList(chosen.moves),objective(chosen));
     }
+    /** Find any complete legal hand independent of scoring beam width.
+     * At most three pieces exist; memoize (board, used) dead ends.
+     */
+    private static State completeTray(long board,List<Game.Piece> pieces,int chain,int misses) {
+        Set<String> failed=new HashSet<>();
+        return completeFrom(new State(board,0,Collections.emptyList(),0,chain,misses,0),
+            pieces,(1<<pieces.size())-1,failed);
+    }
+    private static State completeFrom(State s,List<Game.Piece> pieces,int all,Set<String> failed) {
+        if(s.used==all)return s;
+        String key=s.board+":"+s.used;
+        if(failed.contains(key))return null;
+        for(int i=0;i<pieces.size();i++)if((s.used&(1<<i))==0) {
+            Game.Piece piece=pieces.get(i);
+            for(int y=0;y<=8-piece.h;y++)for(int x=0;x<=8-piece.w;x++) {
+                Rules.Placement p=Rules.place(s.board,piece,x,y);
+                if(p==null)continue;
+                int nextMisses=p.lines>0?0:s.misses+1;
+                int nextCombo=p.lines>0?s.combo+1:(nextMisses>=3?0:s.combo);
+                double points=piece.xs.length+linePoints(p.lines,nextCombo);
+                if(p.lines>0&&p.board==0)points+=150;
+                double broken=(s.combo>0&&nextCombo==0)?50.0*s.combo:0;
+                List<Move> moves=new ArrayList<>(s.moves);
+                moves.add(new Move(i,x,y));
+                State child=new State(p.board,s.used|(1<<i),moves,
+                    s.reward+points-broken,nextCombo,Math.min(3,nextMisses),
+                    s.clears+(p.lines>0?1:0));
+                State completed=completeFrom(child,pieces,all,failed);
+                if(completed!=null)return completed;
+            }
+        }
+        failed.add(key);
+        return null;
+    }
+
 }
