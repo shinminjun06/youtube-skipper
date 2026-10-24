@@ -231,7 +231,7 @@ class CaptureService : Service() {
         Recognizer.Issue.BOARD_REFERENCE -> "판 인식됨 · 빈칸 기준 색상 확인 실패"
         Recognizer.Issue.BOARD_CELL -> "판 인식됨 · ${result.row+1}행 ${result.column+1}열 색상 불확실"
         Recognizer.Issue.BOARD_ANIMATION -> "판 인식됨 · 줄 삭제 효과가 끝나기를 기다리는 중"
-        Recognizer.Issue.TRAY -> ""추천 대기 · ${result.slot+1}번 블록을 아직 못 읽음 · " + when (result.reason) {
+        Recognizer.Issue.TRAY -> "추천 대기 · ${result.slot+1}번 블록을 아직 못 읽음 · " + when (result.reason) {
             "OUTSIDE_CAPTURE" -> "공유 범위 부족"
             "UNSUPPORTED_COLOR", "OCCLUDED_OR_UNKNOWN_COLOR" -> "색상 또는 가림 확인"
             else -> "칸 경계·모양 확인"
