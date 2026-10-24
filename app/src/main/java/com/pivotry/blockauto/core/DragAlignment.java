@@ -54,12 +54,28 @@ public final class DragAlignment {
         if(im.width!=previous.width||im.height!=previous.height)return null;
         List<Origin> now=stagedCandidates(im,before,frame,shape,fingerX,fingerY);
         List<Origin> old=stagedCandidates(previous,before,frame,shape,fingerX-dx,fingerY-dy);
+        // Drag rendering can be delayed by a frame and can quantize to grid
+        // pixels. Compare actual displacement with the commanded probe rather
+        // than requiring nearly exact sub-pixel movement.
         Origin selected=null;
-        for(Origin n:now) {
-            boolean follows=false;
-            for(Origin o:old)if(Math.abs(n.x-o.x-dx)<frame.cell*.14f&&Math.abs(n.y-o.y-dy)<frame.cell*.14f)follows=true;
-            if(follows){if(selected!=null)return null;selected=n;}
+        float bestError=Float.MAX_VALUE;
+        float secondError=Float.MAX_VALUE;
+        for(Origin n:now) for(Origin o:old) {
+            float movedX=n.x-o.x,movedY=n.y-o.y;
+            float tolerance=frame.cell*.34f;
+            if(Math.abs(movedX-dx)>tolerance||Math.abs(movedY-dy)>tolerance)continue;
+            // Require a substantial motion in the commanded direction; a
+            // stationary tray piece or static board preview is never accepted.
+            if(dx*movedX+dy*movedY < (dx*dx+dy*dy)*.48f)continue;
+            float error=(movedX-dx)*(movedX-dx)+(movedY-dy)*(movedY-dy);
+            if(error<bestError) {
+                secondError=bestError;
+                bestError=error;
+                selected=n;
+            } else if(error<secondError)secondError=error;
         }
+        // Multiple equally plausible matches are unsafe: do not release.
+        if(secondError-bestError < frame.cell*frame.cell*.025f)return null;
         return selected;
     }
     private static List<Origin> stagedCandidates(Game.Image im,Game.Image before,Game.Frame frame,Game.Shape shape,float fingerX,float fingerY) {
