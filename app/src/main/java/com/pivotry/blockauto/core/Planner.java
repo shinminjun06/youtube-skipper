@@ -69,7 +69,7 @@ public final class Planner {
         return -penalty;
     }
     static double quality(long b) {
-        int empty=64-Long.bitCount(b),open2=0,open3=0,isolated=0,lines=0;
+        int empty=64-Long.bitCount(b),open2=0,open3=0,isolated=0,lines=0,nearLines=0;
         for(int y=0;y<8;y++)for(int x=0;x<8;x++)if((b&(1L<<(8*y+x)))==0) {
             int neighbors=0;
             if(x>0&&(b&(1L<<(8*y+x-1)))==0)neighbors++;
@@ -83,11 +83,19 @@ public final class Planner {
         for(int i=0;i<8;i++) {
             int row=(int)(b>>>(8*i))&255,col=0;
             for(int y=0;y<8;y++)if((b&(1L<<(8*y+i)))!=0)col|=1<<y;
-            for(int pattern:new int[]{row,col})for(int n=3;n<=5;n++)for(int x=0;x<=8-n;x++)
-                if((pattern&(((1<<n)-1)<<x))==0)lines++;
+            for(int pattern:new int[]{row,col}) {
+                int count=Integer.bitCount(pattern);
+                // Favor accessible 1-3 cell gaps for keeping the chain alive,
+                // but not enough to override essential large-piece mobility.
+                if(count==7)nearLines+=5;
+                else if(count==6)nearLines+=3;
+                else if(count==5)nearLines+=1;
+                for(int n=3;n<=5;n++)for(int x=0;x<=8-n;x++)
+                    if((pattern&(((1<<n)-1)<<x))==0)lines++;
+            }
         }
         int[] f=flexibility(b);
-        return empty*1.25+open2*.6+open3*1.4+lines*.12-isolated*18+
+        return empty*1.25+open2*.6+open3*1.4+lines*.12+nearLines*4.0-isolated*18+
             Math.min(8,f[0])*12+Math.min(5,f[1])*4+Math.min(5,f[2])*4+
             Math.min(8,f[3])*6+Math.min(8,f[4])*6;
     }
@@ -116,7 +124,7 @@ public final class Planner {
             outer:for(State s:beam)for(int i=0;i<pieces.size();i++)if((s.used&(1<<i))==0) {
                 Game.Piece piece=pieces.get(i);
                 for(int y=0;y<=8-piece.h;y++)for(int x=0;x<=8-piece.w;x++) {
-                    if((expanded++&127)==0&&(expanded>90000||System.nanoTime()>deadline)){
+                    if((expanded++&127)==0&&(expanded>160000||System.nanoTime()>deadline)){
                         exhausted=true;break outer;
                     }
                     Rules.Placement p=Rules.place(s.board,piece,x,y);
@@ -148,17 +156,17 @@ public final class Planner {
                 int maskGroups=0;
                 for(int mask=1;mask<(1<<pieces.size());mask++)
                     if(Integer.bitCount(mask)==depth+1)maskGroups++;
-                int maxPerMask=Math.max(1,256/Math.max(1,maskGroups));
+                int maxPerMask=Math.max(1,384/Math.max(1,maskGroups));
                 Map<Integer,Integer> selectedCount=new HashMap<>();
                 List<State> diverse=new ArrayList<>();
                 for(State s:beam) {
                     int count=selectedCount.getOrDefault(s.used,0);
                     if(count>=maxPerMask)continue;
                     diverse.add(s);selectedCount.put(s.used,count+1);
-                    if(diverse.size()==256)break;
+                    if(diverse.size()==384)break;
                 }
                 beam=diverse;
-            } else if(beam.size()>256)beam=new ArrayList<>(beam.subList(0,256));
+            } else if(beam.size()>384)beam=new ArrayList<>(beam.subList(0,384));
             if(exhausted)break;
         }
         // If the bounded high-score beam never reached a full hand, run a
