@@ -116,20 +116,20 @@ class AutoService : AccessibilityService() {
                 getLocationOnScreen(origin)
                 val sx = wm.maximumWindowMetrics.bounds.width().toFloat()/g.width
                 val sy = wm.maximumWindowMetrics.bounds.height().toFloat()/g.height
-                paint.style = Paint.Style.FILL
-                paint.color = 0x8800FF99.toInt()
-                for ((x,y) in g.cells) {
-                    val l=(g.left+x*g.cell)*sx-origin[0]
-                    val t=(g.top+y*g.cell)*sy-origin[1]
-                    canvas.drawRoundRect(l+3,t+3,l+g.cell*sx-3,t+g.cell*sy-3,8f,8f,paint)
-                }
+                // MediaProjection also captures our accessibility overlay.
+                // A filled highlight corrupts the 3x3 interior color probes
+                // (0.3..0.7 of each cell) and stalls recognition. Draw ONLY
+                // an inset perimeter in the outer 12% of each cell. It stays
+                // outside both the cell interior probes and the grid lines.
                 paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 3f
+                paint.strokeWidth = (2.5f*resources.displayMetrics.density)
                 paint.color = 0xFF00FFAA.toInt()
                 for ((x,y) in g.cells) {
                     val l=(g.left+x*g.cell)*sx-origin[0]
                     val t=(g.top+y*g.cell)*sy-origin[1]
-                    canvas.drawRect(l+2,t+2,l+g.cell*sx-2,t+g.cell*sy-2,paint)
+                    val w=g.cell*sx; val h=g.cell*sy
+                    canvas.drawRoundRect(l+w*.12f,t+h*.12f,
+                        l+w*.88f,t+h*.88f,5f,5f,paint)
                 }
             }
         }
