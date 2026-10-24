@@ -18,9 +18,9 @@ import kotlin.math.min
  */
 internal class ComboVision {
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-    private var working = false
+    @Volatile private var working = false
     private var lastScanAt = Long.MIN_VALUE
-    private var closed = false
+    @Volatile private var closed = false
 
     fun scan(image: Game.Image, now: Long, boardTop: Float,
              cell: Float, onDetected: (Int) -> Unit) {
