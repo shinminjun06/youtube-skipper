@@ -136,7 +136,44 @@ public final class Recognizer {
                 if(filled>=7)board|=1L<<(y*8+x);
                 else if(empty<7)return failure(Issue.BOARD_CELL,"BLUE_CELL_UNCERTAIN",-1,y,x);
             }
-        } else return failure(Issue.BOARD_REFERENCE,"UNSUPPORTED_THEME_BLUE_ONLY",-1,-1,-1);
+        } else {
+        // Identify the empty board color by consensus among ALL 64 cell
+        // interiors. The previous first-flat-cell reference failed on themed
+        // beveled blocks (e.g., the blue screenshot, row 1 column 7).
+        int[] centers=new int[64];
+        for(int y=0;y<8;y++)for(int x=0;x<8;x++)
+            centers[y*8+x]=im.at(l+(x+.5f)*p,t+(y+.5f)*p);
+        int baseIndex=-1,dominant=0;
+        for(int i=0;i<64;i++){
+            int matches=0;
+            for(int j=0;j<64;j++)if(distance(centers[i],centers[j])<=24)matches++;
+            if(matches>dominant){dominant=matches;baseIndex=i;}
+        }
+        // An unreliable reference is never enough to recommend a move.
+        if(dominant<6)return failure(Issue.BOARD_REFERENCE,"NO_DOMINANT_EMPTY_REFERENCE",-1,-1,-1);
+        int red=0,green=0,blue=0,n=0;
+        for(int c:centers)if(distance(c,centers[baseIndex])<=24){
+            red+=r(c);green+=g(c);blue+=b(c);n++;
+        }
+        int baseline=(red/n<<16)|(green/n<<8)|(blue/n);
+        for(int y=0;y<8;y++)for(int x=0;x<8;x++){
+            int center=centers[y*8+x],empty=0,filled=0,other=0;
+            for(float dy:new float[]{-.17f,0f,.17f})for(float dx:new float[]{-.17f,0f,.17f}){
+                int c=im.at(l+(x+.5f+dx)*p,t+(y+.5f+dy)*p);
+                int delta=distance(c,baseline);
+                if(delta<=16)empty++;
+                else if(delta>48 && faceCandidate(c,baseline))filled++;
+                else other++;
+            }
+            if(empty>=8 && distance(center,baseline)<=16)continue;
+            // Dark/palette-similar surfaces are deliberately held for manual
+            // review instead of incorrectly marking them empty or occupied.
+            if(filled>=7 && distance(center,baseline)>48 && hi(center)>112 &&
+                (light(center)>light(baseline)+13 || hueDistance(center,baseline)>.34f)){
+                board|=1L<<(y*8+x);
+            } else return failure(Issue.BOARD_CELL,"UNRELIABLE_CELL_EVIDENCE",-1,y,x);
+        }
+        }
         List<Game.Shape> shapes=new ArrayList<>();
         // A completed line is an animation, not a stable actionable game board.
         for(long row:Rules.ROWS)if((board&row)==row)return failure(Issue.BOARD_ANIMATION,"CLEARING_ROW",-1,-1,-1);
