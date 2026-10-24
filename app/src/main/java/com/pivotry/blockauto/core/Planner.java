@@ -5,8 +5,8 @@ public final class Planner {
     public static final class Move {public final int piece,x,y;Move(int i,int x,int y){piece=i;this.x=x;this.y=y;}}
     public static final class Result {public final List<Move> moves;public final double score;Result(List<Move> m,double s){moves=m;score=s;}}
     private static final class State {
-        final long board;final int used;final List<Move> moves;final double reward,value;
-        State(long b,int u,List<Move> m,double reward){board=b;used=u;moves=m;this.reward=reward;value=reward+quality(b);}
+        final long board;final int used;final List<Move> moves;final double reward,value;final int clearStreak;
+        State(long b,int u,List<Move> m,double reward,int clearStreak){board=b;used=u;moves=m;this.reward=reward;this.clearStreak=clearStreak;value=reward+quality(b);}
     }
     static double quality(long b) {
         int empty=64-Long.bitCount(b),open2=0,open3=0,isolated=0,lines=0;
@@ -33,7 +33,7 @@ public final class Planner {
     public static Result best(long board,List<Game.Piece> pieces,int milliseconds){
         if(pieces.isEmpty()||pieces.size()>3)return null;
         long deadline=System.nanoTime()+Math.max(5,milliseconds)*1_000_000L;
-        List<State> beam=Collections.singletonList(new State(board,0,Collections.emptyList(),0));
+        List<State> beam=Collections.singletonList(new State(board,0,Collections.emptyList(),0,0));
         State best=null;int expanded=0;
         for(int depth=0;depth<pieces.size();depth++) {
             Map<String,State> unique=new HashMap<>();boolean exhausted=false;
@@ -43,8 +43,10 @@ public final class Planner {
                     if((expanded++&63)==0&&(System.nanoTime()>deadline||expanded>30000)) {exhausted=true;break outer;}
                     Rules.Placement p=Rules.place(s.board,piece,x,y);if(p==null)continue;
                     List<Move> moves=new ArrayList<>(s.moves);moves.add(new Move(i,x,y));
-                    State n=new State(p.board,s.used|(1<<i),moves,s.reward+18*p.lines+8*p.lines*p.lines);
-                    String key=Long.toHexString(n.board)+":"+n.used;
+                    int streak=p.lines>0?s.clearStreak+1:0;
+                    double comboBonus=p.lines>0?14.0*Math.min(5,streak-1)*p.lines:0;
+                    State n=new State(p.board,s.used|(1<<i),moves,s.reward+18*p.lines+8*p.lines*p.lines+comboBonus,streak);
+                    String key=Long.toHexString(n.board)+":"+n.used+":"+n.clearStreak;
                     State old=unique.get(key);if(old==null||n.value>old.value)unique.put(key,n);
                     if(best==null||n.moves.size()>best.moves.size()||n.moves.size()==best.moves.size()&&n.value>best.value)best=n;
                 }
