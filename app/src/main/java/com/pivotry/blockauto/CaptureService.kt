@@ -40,6 +40,11 @@ class CaptureService : Service() {
     private var lastPlanMisses = -1
     private var lastDetectionCode = ""
     private val scoreTracker = ScoreTracker()
+    private val comboVision by lazy { ComboVision() }
+    private var observedCombo = -1
+    private var observedComboAt = 0L
+    private var boardTop = 0f
+    private var boardCell = 0f
     private var noForegroundSince = 0L
 
     override fun onBind(intent: Intent?) = null
@@ -85,14 +90,6 @@ class CaptureService : Service() {
         return START_NOT_STICKY
     }
     fun isRunning() = running
-    fun setDisplayedCombo(value: Int) {
-        worker.post {
-            scoreTracker.seedDisplayedCombo(value)
-            stableSignature = ""
-            lastPlanSignature = ""
-            status("콤보 기준 설정: " + value)
-        }
-    }
     fun toggle() {
         if (running) { halt("추천 정지"); return }
         if (AutoService.live == null) { status("접근성 서비스를 켜주세요"); return }
@@ -103,8 +100,9 @@ class CaptureService : Service() {
             if (!valid(epoch)) return@post
             stableSignature = ""; lastPlanSignature = ""; noForegroundSince = 0L
             scoreTracker.reset()
-            scoreTracker.seedDisplayedCombo(getSharedPreferences("score",MODE_PRIVATE).getInt("display_combo",0))
-            status("게임판 확인 중")
+            observedCombo = -1; observedComboAt = 0L
+            boardTop = 0f; boardCell = 0f
+            status("게임판 확인 중 · 콤보 자동 추적")
         }
     }
     fun halt(reason: String) {
@@ -165,6 +163,8 @@ class CaptureService : Service() {
         val detection = Recognizer.analyze(image)
         val frame = detection.frame
         if (!valid(epoch)) return
+        if (frame!=null) {boardTop=frame.top; boardCell=frame.cell}
+        scanDisplayedCombo(image,now,epoch)
         if (frame == null) {
             AutoService.live?.clearGuide()
             lastPlanSignature = ""
@@ -216,6 +216,24 @@ class CaptureService : Service() {
         AutoService.live?.showGuide(frame.left,frame.top,frame.cell,cells,frame.width,frame.height)
         status("고득점 추천 " + (frame.shapes[move.piece].slot+1) + "번: " + (move.x+1) + "열 " + (move.y+1) + "행 · 추적 콤보 " + scoreTracker.combo())
     }
+    /** Read the short-lived COMBO animation asynchronously without sending images anywhere. */
+    private fun scanDisplayedCombo(image: Game.Image,now: Long,epoch: Int) {
+        comboVision.scan(image,now,boardTop,boardCell) { displayed ->
+            worker.post {
+                if(!valid(epoch)) return@post
+                // Avoid repeatedly resetting the chain from one lingering caption.
+                // A reappearance after 3 seconds can re-anchor a restarted game.
+                val previous=observedCombo
+                val previousTime=observedComboAt
+                observedComboAt=SystemClock.uptimeMillis()
+                if(displayed==previous && observedComboAt-previousTime<3000) return@post
+                observedCombo=displayed
+                scoreTracker.observeDisplayedCombo(displayed)
+                lastPlanSignature=""
+                android.util.Log.i("BlockBlastAuto","verified COMBO label="+displayed)
+            }
+        }
+    }
     private fun recognitionMessage(result: Recognizer.Detection): String = when (result.issue) {
         Recognizer.Issue.FORMAT -> "화면 크기 불일치 · 전체 세로 화면을 공유하세요"
         Recognizer.Issue.BLACK_FRAME -> "검은 화면 수신 · 전체 화면 공유를 다시 시작하세요"
@@ -237,6 +255,7 @@ class CaptureService : Service() {
             display?.release(); display = null
             reader?.close(); reader = null
             cached = null
+            comboVision.close()
             projection?.stop(); projection = null
             thread.quitSafely()
         }
