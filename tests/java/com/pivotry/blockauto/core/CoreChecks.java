@@ -143,6 +143,15 @@ public final class CoreChecks {
         pixels=original.pixels.clone();
         for(int y=1176;y<1207;y++)for(int x=357;x<388;x++)pixels[y*709+x]=0xff38a8e8;
         check(Recognizer.read(new Game.Image(709,1536,pixels))==null,"different colored occlusion cannot erase an arm and become a smaller piece");
+        pixels=original.pixels.clone();
+        for(int y=1045;y<1297;y++)for(int x=41;x<669;x++)pixels[y*709+x]=0xffb87828;
+        for(int y=1155;y<1190;y++)for(int x=100;x<135;x++)pixels[y*709+x]=0xff986020;
+        check(Recognizer.read(new Game.Image(709,1536,pixels))==null,"low contrast visible unknown face is not an empty pocket");
+        for(int cover:new int[]{0xffa0a000,0xff986020,0xffaa8810}) {
+            pixels=original.pixels.clone();
+            for(int y=1176;y<1207;y++)for(int x=357;x<388;x++)pixels[y*709+x]=cover;
+            check(Recognizer.read(new Game.Image(709,1536,pixels))==null,"same-hue/dimmer overlay cannot become a smaller actionable shape "+Integer.toHexString(cover));
+        }
     }
     static void tile(Game.Image im,float x,float y,float cell) {
         for(int yy=(int)y+1;yy<y+cell-1;yy++)for(int xx=(int)x+1;xx<x+cell-1;xx++) {
@@ -202,6 +211,14 @@ public final class CoreChecks {
     }
     static void darkPalette() throws Exception {
         Game.Image original=load("empty-gold.png");
+        Game.Frame geometry=Recognizer.read(original);
+        for(int occupied:new int[]{0xff502040,0xff602050,0xff603010}) {
+            int[] pixels=original.pixels.clone();
+            for(int i=0;i<8;i++)for(int y=(int)(geometry.top+i*geometry.cell+4);y<geometry.top+(i+1)*geometry.cell-4;y++)
+                for(int x=(int)(geometry.left+i*geometry.cell+4);x<geometry.left+(i+1)*geometry.cell-4;x++)pixels[y*709+x]=occupied;
+            Game.Frame read=Recognizer.read(new Game.Image(709,1536,pixels));
+            check(read==null||read.board==0x8040201008040201L,"dark occupied reference must never invert empty/occupied cells "+Integer.toHexString(occupied));
+        }
         for(int darkColor:new int[]{0xff803080,0xff266c8a,0xff8e3828}) {
             int[] pixels=original.pixels.clone();
             // Same measured screenshot geometry and beveled faces, darker colored material.
@@ -223,7 +240,19 @@ public final class CoreChecks {
             for(Game.Shape shape:result.frame.shapes)check(result.frame!=null&&Recognizer.distance(new Game.Image(709,1536,pixels).at(shape.pickX,shape.pickY),darkColor)<30,"dark pickup hits actual material");
         }
     }
+    static void purpleFrames() throws Exception {
+        Recognizer.Detection result=Recognizer.analyze(load("purple-gold-frames.png"));
+        check(result.frame!=null,"actual purple theme: gold frames are decoration, not a foreign-color occlusion: "+result.code());
+        Game.Frame f=result.frame;
+        check(f.board==0x0c606a2f32eccdc8L,"actual multicolor occupied board matches manually labeled cells");
+        check(f.shapes.size()==3,"actual purple tray has three pieces");
+        check(f.shapes.get(0).piece.key.equals("0,0;1,0;"),"green horizontal pair");
+        check(f.shapes.get(1).piece.key.equals("1,0;0,1;1,1;0,2;"),"red staggered four-cell piece");
+        check(f.shapes.get(2).piece.key.equals("1,0;0,1;1,1;2,1;"),"orange T orientation");
+        check(Planner.best(f.board,f.shapes.stream().map(shape->shape.piece).collect(java.util.stream.Collectors.toList()),180)!=null,"recognized real hand proceeds to a legal plan");
+    }
     public static void main(String[] args) throws Exception {
+        purpleFrames();
         diagnostics();
         darkPalette();
         recognition();

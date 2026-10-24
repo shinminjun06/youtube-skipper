@@ -193,7 +193,7 @@ class CaptureService : Service() {
             return
         }
         if (frame.shapes.isEmpty()) { stableSignature = ""; status("블록 대기 중 또는 게임 종료"); return }
-        if (!stable(frame.signature(),now)) return
+        if (!stable(frame.signature(),now)) { status("판·블록 " + frame.shapes.size + "개 확인 · 화면 안정화 중"); return }
         // SurfaceView-based games can expose no accessibility root.
         // Stable visual recognition may still establish the game is on screen.
         val app = AutoService.live?.foregroundPackage()
@@ -205,6 +205,7 @@ class CaptureService : Service() {
             }
         } else noForegroundSince = 0L
         if (targetApp != null && app != null && targetApp != app) { halt("앱 전환 감지"); return }
+        status("배치 계산 중 · 블록 " + frame.shapes.size + "개")
         val result = Planner.best(frame.board,frame.shapes.map { it.piece },180)
         if (!valid(epoch)) return
         if (result == null) { halt("인식한 블록의 합법적인 배치가 없습니다"); return }
@@ -230,7 +231,7 @@ class CaptureService : Service() {
         Recognizer.Issue.BOARD_REFERENCE -> "판 인식됨 · 빈칸 기준 색상 확인 실패"
         Recognizer.Issue.BOARD_CELL -> "판 인식됨 · ${result.row+1}행 ${result.column+1}열 색상 불확실"
         Recognizer.Issue.BOARD_ANIMATION -> "판 인식됨 · 줄 삭제 효과가 끝나기를 기다리는 중"
-        Recognizer.Issue.TRAY -> "판 인식됨 · ${result.slot+1}번 블록 인식 대기 · " + when (result.reason) {
+        Recognizer.Issue.TRAY -> "자동 배치 대기 · ${result.slot+1}번 블록을 아직 못 읽음 · " + when (result.reason) {
             "OUTSIDE_CAPTURE" -> "공유 범위 부족"
             "UNSUPPORTED_COLOR", "OCCLUDED_OR_UNKNOWN_COLOR" -> "색상 또는 가림 확인"
             else -> "칸 경계·모양 확인"
@@ -273,12 +274,13 @@ class CaptureService : Service() {
         main.post {
             if (!valid(epoch)) return@post
             val service = AutoService.live
-            if (service == null || (targetApp != null && service.foregroundPackage() != null && service.foregroundPackage() != targetApp)) { halt("접근성 또는 게임 화면 연결 끊김"); return@post }
+            val actualApp = service?.foregroundPackage()
+            if (service == null || (targetApp != null && actualApp != null && actualApp != targetApp)) { halt("접근성 또는 게임 화면 연결 끊김"); return@post }
             action(service) { ok ->
                 worker.post {
                     if (!valid(epoch)) return@post
                     inFlight = false
-                    if (!ok) { halt("터치가 취소되었습니다 · 다시 시작하세요"); return@post }
+                    if (!ok) { halt("터치 실패 · " + service.lastGestureError.ifEmpty { "입력 연결을 확인하세요" }); return@post }
                     phase = next; phaseAt = SystemClock.uptimeMillis(); nextReadAt = phaseAt+160
                     stableSignature = ""; observed = null
                 }

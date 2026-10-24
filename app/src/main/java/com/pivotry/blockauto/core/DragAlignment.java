@@ -54,9 +54,10 @@ public final class DragAlignment {
             if(s>best){best=s;bx=x;by=y;}
         }
         if(best<.9f)return null;
-        // Average equally good nearby fits to avoid picking one edge of a flat score plateau.
-        float sx=0,sy=0;int count=0;
-        for(float y=by-step;y<=by+step;y+=Math.max(1,step/4))for(float x=bx-step;x<=bx+step;x+=Math.max(1,step/4))
+        // Average the whole local plateau, not just one step around its first
+        // sampled edge. Thick frames/downsampling can make that edge asymmetric.
+        float radius=cell*.45f,sx=0,sy=0;int count=0;
+        for(float y=by-radius;y<=by+radius;y+=Math.max(1,step/4))for(float x=bx-radius;x<=bx+radius;x+=Math.max(1,step/4))
             if(x>=minX&&y>=minY&&x<=maxX&&y<=maxY&&score(im,before,shape.piece,shape.color,x,y,cell,minNovel)>=best-.001f){sx+=x;sy+=y;count++;}
         return new Origin(count==0?bx:sx/count,count==0?by:sy/count,best);
     }

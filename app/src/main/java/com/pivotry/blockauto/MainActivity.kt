@@ -33,7 +33,7 @@ class MainActivity : Activity() {
         }
         fun button(text: String,action: ()->Unit) { root.addView(Button(this).apply { this.text = text; setOnClickListener { action() } }) }
         label("Block Blast Auto",27f)
-        label("0.4.1 · 어두운 블록 인식과 단계별 상태 표시",14f)
+        label("0.5.1 · 테두리 인식과 자동 배치 진행 표시",14f)
         state = label("준비 중",16f).apply { setTextIsSelectable(true) }
         label("1. 접근성을 연결하세요. 블록을 잡고 이동하는 데 사용합니다.")
         button("접근성 설정 열기") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }

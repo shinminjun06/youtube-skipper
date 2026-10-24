@@ -26,6 +26,8 @@ class TouchFixtureActivity : Activity() {
     private lateinit var game: View
     override fun onCreate(state: Bundle?) {
         super.onCreate(state); live = this
+        val dark = intent.getBooleanExtra("dark",false)
+        val plated = intent.getBooleanExtra("plated",false)
         window.setDecorFitsSystemWindows(false)
         game = object : View(this) {
             val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -36,17 +38,26 @@ class TouchFixtureActivity : Activity() {
             fun rect(l: Float,t: Float,w: Float,h: Float,c: Int) { paint.color=c; canvasRef!!.drawRect(l,t,l+w,t+h,paint) }
             var canvasRef: Canvas? = null
             fun tile(x: Float,y: Float,size: Float) {
-                rect(x+1,y+1,size-2,size-2,Color.rgb(251,220,78))
-                rect(x+2,y+2,size-4,size*.12f,Color.rgb(255,237,135))
-                rect(x+size*.86f,y+size*.12f,size*.1f,size*.85f,Color.rgb(215,165,39))
+                if(plated) {
+                    rect(x+1,y+1,size-2,size-2,Color.rgb(177,137,56))
+                    rect(x+1,y+1,size-2,size*.09f,Color.rgb(234,190,90))
+                    rect(x+1,y+size*.9f,size-2,size*.07f,Color.rgb(110,70,25))
+                    rect(x+size*.12f,y+size*.12f,size*.76f,size*.76f,Color.rgb(20,204,70))
+                    rect(x+size*.14f,y+size*.14f,size*.72f,size*.08f,Color.rgb(50,230,85))
+                    rect(x+size*.79f,y+size*.22f,size*.07f,size*.64f,Color.rgb(9,135,35))
+                    return
+                }
+                rect(x+1,y+1,size-2,size-2,if(dark)Color.rgb(72,90,140) else Color.rgb(251,220,78))
+                rect(x+2,y+2,size-4,size*.12f,if(dark)Color.rgb(100,125,170) else Color.rgb(255,237,135))
+                rect(x+size*.86f,y+size*.12f,size*.1f,size*.85f,if(dark)Color.rgb(40,65,110) else Color.rgb(215,165,39))
             }
             fun trayX(slot: Int,piece: Game.Piece) = width*(.21f+.29f*slot)-piece.w*cell*.447f/2
             fun trayY(piece: Game.Piece) = top+8*cell+cell*2.4f-piece.h*cell*.447f/2
             override fun onDraw(canvas: Canvas) {
-                canvasRef=canvas; canvas.drawColor(Color.rgb(187,133,41))
-                rect(left-2,top-2,8*cell+4,8*cell+4,Color.rgb(62,41,9))
+                canvasRef=canvas; canvas.drawColor(if(plated)Color.rgb(91,62,152) else Color.rgb(187,133,41))
+                rect(left-2,top-2,8*cell+4,8*cell+4,if(plated)Color.rgb(15,10,27) else Color.rgb(62,41,9))
                 for(y in 0..7)for(x in 0..7) {
-                    rect(left+x*cell+2,top+y*cell+2,cell-4,cell-4,Color.rgb(86,61,26))
+                    rect(left+x*cell+2,top+y*cell+2,cell-4,cell-4,if(plated)Color.rgb(42,31,60) else Color.rgb(86,61,26))
                     if(board and (1L shl (8*y+x)) != 0L)tile(left+x*cell,top+y*cell,cell)
                 }
                 for(slot in 0..2)if(available[slot]&&slot!=selected) {

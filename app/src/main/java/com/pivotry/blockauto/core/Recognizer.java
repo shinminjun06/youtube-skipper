@@ -96,17 +96,26 @@ public final class Recognizer {
         }
         if(p==0)return failure(Issue.GRID,"NO_8X8_GRID",-1,-1,-1);
         long board=0;
-        int baseline=0;float darkest=Float.MAX_VALUE;
+        // Empty cells have the same interior material at center and all four
+        // inset corners. An occupied dark center is NOT a background reference.
+        // Two different flat dark materials are ambiguous: reject, never invert.
+        int baseline=0;boolean hasReference=false;
         for(int y=0;y<8;y++)for(int x=0;x<8;x++) {
             int c=im.at(l+(x+.5f)*p,t+(y+.5f)*p);
-            if(light(c)<darkest){darkest=light(c);baseline=c;}
+            if(hi(c)>195)continue;
+            boolean uniform=true;
+            for(float dy:new float[]{.04f,.96f})for(float dx:new float[]{.04f,.96f})
+                if(distance(c,im.at(l+(x+dx)*p,t+(y+dy)*p))>20)uniform=false;
+            if(!uniform)continue;
+            if(hasReference&&distance(c,baseline)>20)return failure(Issue.BOARD_REFERENCE,"AMBIGUOUS_EMPTY_REFERENCE",-1,-1,-1);
+            if(!hasReference){baseline=c;hasReference=true;}
         }
-        if(hi(baseline)>195)return failure(Issue.BOARD_REFERENCE,"NO_EMPTY_REFERENCE",-1,-1,-1); // no trustworthy empty-cell reference
+        if(!hasReference)return failure(Issue.BOARD_REFERENCE,"NO_EMPTY_REFERENCE",-1,-1,-1);
         for(int y=0;y<8;y++)for(int x=0;x<8;x++) {
             int hit=0;
             for(float dy:new float[]{-.18f,0,.18f})for(float dx:new float[]{-.18f,0,.18f}) {
                 int c=im.at(l+(x+.5f+dx)*p,t+(y+.5f+dy)*p);
-                if(distance(c,baseline)>38) {
+                if(distance(c,baseline)>20) {
                     if(!isTile(c))return failure(Issue.BOARD_CELL,"UNKNOWN_COLOR",-1,y,x); // unknown dark/monochrome tile is not empty
                     hit++;
                 }
@@ -132,6 +141,21 @@ public final class Recognizer {
     }
     private static final Tray EMPTY=new Tray(null,SlotState.EMPTY,"EMPTY");
     private static Tray uncertain(String reason){return new Tray(null,SlotState.UNCERTAIN,reason);}
+    /** Excluded material may be a narrow bevel/cast shadow, but not a broad
+     * unexplained face. Summed areas keep this check linear in pocket pixels. */
+    private static boolean hasSolidPatch(boolean[] mask,int w,int h,int edge) {
+        if(edge>w||edge>h)return false;
+        int stride=w+1;int[] sums=new int[(w+1)*(h+1)];
+        for(int y=1;y<=h;y++) {
+            int row=0;
+            for(int x=1;x<=w;x++) {if(mask[(y-1)*w+x-1])row++;sums[y*stride+x]=sums[(y-1)*stride+x]+row;}
+        }
+        for(int y=edge;y<=h;y++)for(int x=edge;x<=w;x++) {
+            int count=sums[y*stride+x]-sums[(y-edge)*stride+x]-sums[y*stride+x-edge]+sums[(y-edge)*stride+x-edge];
+            if(count>=edge*edge*.9f)return true;
+        }
+        return false;
+    }
     private static Tray tray(Game.Image im,float l,float t,float p,int slot) {
         int x1=(int)(l+slot*8*p/3),x2=(int)(l+(slot+1)*8*p/3);
         int y1=(int)(t+8.7f*p),y2=Math.min(im.height-1,(int)(t+11.9f*p));
@@ -169,7 +193,7 @@ public final class Recognizer {
             material=((key>>8&15)*16+8)<<16|((key>>4&15)*16+8)<<8|(key&15)*16+8;
         }
         int rw=x2-x1,rh=y2-y1;
-        boolean[] mask=new boolean[rw*rh];
+        boolean[] mask=new boolean[rw*rh],unexplained=new boolean[rw*rh];
         int minX=rw,minY=rh,maxX=-1,maxY=-1,foreground=0,unmodeledBright=0,modeled=0;
         for(int y=0;y<rh;y++)for(int x=0;x<rw;x++) {
             int c=im.at(x1+x,y1+y);
@@ -177,20 +201,21 @@ public final class Recognizer {
             if(difference>65)foreground++;
             boolean face=material!=0&&isTile(c)&&difference>100&&sameMaterial(c,material);
             boolean unknownBright=!isTile(c)&&difference>80&&(hi(c)>hi(bg)+20||hi(c)-Math.min(r(c),Math.min(g(c),b(c)))<25);
-            boolean foreignColor=isTile(c)&&difference>100&&hi(c)>hi(material)*.75f&&hueDistance(c,material)>=.3f;
-            // A foreign colored overlay must not erase an arm and turn the shape
-            // into a smaller, seemingly legal piece after material filtering.
-            if(unknownBright||foreignColor)unmodeledBright++;
+            if(unknownBright)unmodeledBright++;
+            // Colored gold plates around real-game tiles are narrow decoration;
+            // a broad excluded face is evidence of an unreadable/covered block.
+            unexplained[y*rw+x]=!face&&difference>40;
             if(face) {
                 modeled++;
                 mask[y*rw+x]=true;minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);
             }
         }
-        if(maxX<minX)return foreground<p*p*.04?EMPTY:uncertain("UNSUPPORTED_COLOR");
-        if(unmodeledBright>Math.max(p*p*.04,modeled*.15))return uncertain("OCCLUDED_OR_UNKNOWN_COLOR");
+        boolean broadUnknown=hasSolidPatch(unexplained,rw,rh,Math.max(4,(int)(p*.26f)));
+        if(maxX<minX)return !broadUnknown&&foreground<p*p*.04?EMPTY:uncertain("UNSUPPORTED_COLOR");
+        if(unmodeledBright>Math.max(p*p*.04,modeled*.15)||broadUnknown)return uncertain("OCCLUDED_OR_UNKNOWN_COLOR");
         // Separate beveled square faces. Their measured sizes set the lattice pitch;
         // a tiny gap does not add a phantom row or column.
-        List<Integer> sizes=new ArrayList<>();
+        int centeredArea=0;List<Integer> sizes=new ArrayList<>();List<Float> centersX=new ArrayList<>(),centersY=new ArrayList<>();
         boolean[] visited=new boolean[mask.length];int[] queue=new int[mask.length];
         for(int i=0;i<mask.length;i++)if(mask[i]&&!visited[i]) {
             int head=0,tail=0,ax=rw,ay=rh,bx=0,by=0;queue[tail++]=i;visited[i]=true;
@@ -202,26 +227,58 @@ public final class Recognizer {
                     if(nx>=0&&ny>=0&&nx<rw&&ny<rh) {int n=ny*rw+nx;if(mask[n]&&!visited[n]){visited[n]=true;queue[tail++]=n;}}
                 }
             }
-            if(tail>p*p*.025 && bx-ax<p*.68 && by-ay<p*.68) {sizes.add(bx-ax+1);sizes.add(by-ay+1);}
+            if(tail>p*p*.025 && bx-ax<p*.68 && by-ay<p*.68) {
+                centeredArea+=tail;sizes.add(bx-ax+1);sizes.add(by-ay+1);centersX.add((ax+bx)*.5f);centersY.add((ay+by)*.5f);
+            }
         }
         if(sizes.isEmpty())return uncertain("NO_SEPARATE_FACES");
         Collections.sort(sizes);float unit=sizes.get(sizes.size()/2)+1;
+        // Center-to-center pitch includes the gold frame and gaps. Face width
+        // alone underestimates the pitch in the real purple event theme.
+        List<Float> intervals=new ArrayList<>();
+        for(List<Float> axis:Arrays.asList(centersX,centersY)) {
+            List<Float> sorted=new ArrayList<>(axis);Collections.sort(sorted);
+            float previous=sorted.get(0);
+            for(int i=1;i<sorted.size();i++)if(sorted.get(i)-previous>p*.2f) {
+                float interval=sorted.get(i)-previous;
+                if(interval>=p*.26f&&interval<=p*.68f)intervals.add(interval);
+                previous=sorted.get(i);
+            }
+        }
+        boolean centersReliable=!intervals.isEmpty()&&centeredArea>=modeled*.7f;
+        float firstX,firstY,stepX,stepY;int cols,rows;
+        if(centersReliable) {
+            Collections.sort(intervals);unit=intervals.get(intervals.size()/2);
+            firstX=Collections.min(centersX);firstY=Collections.min(centersY);
+            cols=Math.round((Collections.max(centersX)-firstX)/unit)+1;rows=Math.round((Collections.max(centersY)-firstY)/unit)+1;
+            for(int i=0;i<centersX.size();i++) {
+                float gx=(centersX.get(i)-firstX)/unit,gy=(centersY.get(i)-firstY)/unit;
+                if(Math.abs(gx-Math.round(gx))>.18f||Math.abs(gy-Math.round(gy))>.18f)return uncertain("IRREGULAR_LATTICE");
+            }
+            stepX=unit;stepY=unit;
+        } else {
+            // Downsampling can merge adjacent faces. Do not silently drop the
+            // merged component: retain the complete mask bounds in this case.
+            cols=Math.round((maxX-minX+1)/unit);rows=Math.round((maxY-minY+1)/unit);
+            if(cols<1||rows<1)return uncertain("SHAPE_BOUNDS");
+            stepX=(maxX-minX+1)/(float)cols;stepY=(maxY-minY+1)/(float)rows;
+            if(Math.abs(stepX-stepY)>unit*.2f)return uncertain("IRREGULAR_LATTICE");
+            firstX=minX+stepX*.5f;firstY=minY+stepY*.5f;
+        }
         if(unit<p*.26 || unit>p*.68)return uncertain("FACE_SIZE");
-        int cols=Math.round((maxX-minX+1)/unit),rows=Math.round((maxY-minY+1)/unit);
         if(cols<1||cols>5||rows<1||rows>5)return uncertain("SHAPE_BOUNDS");
-        float ux=(maxX-minX+1)/(float)cols,uy=(maxY-minY+1)/(float)rows;
-        if(Math.abs(ux-uy)>unit*.2)return uncertain("IRREGULAR_LATTICE");
         List<Integer> coords=new ArrayList<>();float pickX=0,pickY=0,near=Float.MAX_VALUE;int color=0;
         for(int y=0;y<rows;y++)for(int x=0;x<cols;x++) {
             int hits=0;
             for(float dy:new float[]{-.2f,0,.2f})for(float dx:new float[]{-.2f,0,.2f}) {
-                int sx=(int)(minX+(x+.5f+dx)*ux),sy=(int)(minY+(y+.5f+dy)*uy);
+                int sx=Math.round(firstX+(x+dx)*stepX),sy=Math.round(firstY+(y+dy)*stepY);
+                if(sx<0||sx>=rw||sy<0||sy>=rh)return uncertain("OUTSIDE_CAPTURE");
                 if(mask[sy*rw+sx])hits++;
             }
             if(hits>=7) {
                 coords.add(x);coords.add(y);
                 float d=(x-(cols-1)*.5f)*(x-(cols-1)*.5f)+(y-(rows-1)*.5f)*(y-(rows-1)*.5f);
-                if(d<near){near=d;pickX=x1+minX+(x+.5f)*ux;pickY=y1+minY+(y+.5f)*uy;color=im.at(pickX,pickY);}
+                if(d<near){near=d;pickX=x1+firstX+x*stepX;pickY=y1+firstY+y*stepY;color=im.at(pickX,pickY);}
             } else if(hits>1)return uncertain("PARTIAL_FACE");
         }
         if(coords.isEmpty())return uncertain("NO_FILLED_CELL");

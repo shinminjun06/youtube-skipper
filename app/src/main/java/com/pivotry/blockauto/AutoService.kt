@@ -29,6 +29,7 @@ class AutoService : AccessibilityService() {
     private var cancelling = false
     private var cancelPending: (() -> Unit)? = null
     private var session = 0
+    @Volatile var lastGestureError = ""; private set
     private val watchdog = Runnable { abortHold(); CaptureService.active?.halt("드래그 시간 초과") }
 
     override fun onServiceConnected() {
@@ -68,7 +69,10 @@ class AutoService : AccessibilityService() {
 
     fun beginDrag(sx: Float,sy: Float,tx: Float,ty: Float,expectedApp: String?,done: (Boolean)->Unit) {
         check(Looper.myLooper() == Looper.getMainLooper())
-        if (stroke != null || inFlight || (expectedApp != null && foregroundPackage() != null && foregroundPackage() != expectedApp)) { done(false); return }
+        val actualApp = foregroundPackage()
+        lastGestureError = ""
+        if (stroke != null || inFlight || cancelling) { lastGestureError = "이전 터치 정리 중"; done(false); return }
+        if (expectedApp != null && actualApp != null && actualApp != expectedApp) { lastGestureError = "다른 앱이 앞에 있음"; done(false); return }
         fingerX = sx; fingerY = sy
         session++
         main.removeCallbacks(watchdog); main.postDelayed(watchdog,9000)
@@ -100,10 +104,11 @@ class AutoService : AccessibilityService() {
         try {
             val accepted = dispatchGesture(gesture,object : GestureResultCallback() {
                 override fun onCompleted(gestureDescription: GestureDescription?) { finish(true) }
-                override fun onCancelled(gestureDescription: GestureDescription?) { finish(false) }
+                override fun onCancelled(gestureDescription: GestureDescription?) { lastGestureError = "Android가 터치를 취소함"; finish(false) }
             },main)
-            if (!accepted) finish(false)
-        } catch (_: Exception) { finish(false) }
+            android.util.Log.i("BlockBlastAuto","gesture accepted="+accepted+" continue="+next.willContinue()+" target="+tx+","+ty)
+            if (!accepted) { lastGestureError = "접근성 입력이 거부됨"; finish(false) }
+        } catch (e: Exception) { lastGestureError = e.javaClass.simpleName; finish(false) }
     }
     /** A fresh (non-continuing) gesture cancels the previous pointer with CANCEL,
      * including an in-flight terminating stroke. Its tap lands on our neutral

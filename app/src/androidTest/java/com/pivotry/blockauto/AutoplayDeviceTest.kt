@@ -47,7 +47,10 @@ class AutoplayDeviceTest {
         await("stop releases pointer") { !activity.held }
         Assert.assertEquals("stop does not install a block",0,activity.placed)
     }
-    @Test fun b_realCaptureControllerInstallsSixConsecutiveMoves() {
+    @Test fun b_realCaptureControllerInstallsSixConsecutiveMoves() { continuousPlacements(false) }
+    @Test fun f_darkPaletteInstallsSixConsecutiveMoves() { continuousPlacements(true) }
+    @Test fun g_goldPlatedPurpleThemeInstallsSixConsecutiveMoves() { continuousPlacements(false,true) }
+    private fun continuousPlacements(dark: Boolean,plated: Boolean = false) {
         val activity=instrumentation.startActivitySync(Intent(context,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         instrumentation.runOnMainSync {
             val views=ArrayList<View>()
@@ -62,7 +65,7 @@ class AutoplayDeviceTest {
                 ?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
         }
         await("projection service") { CaptureService.active!=null }
-        instrumentation.startActivitySync(Intent(context,TouchFixtureActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        instrumentation.startActivitySync(Intent(context,TouchFixtureActivity::class.java).putExtra("dark",dark).putExtra("plated",plated).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         Thread.sleep(800)
         instrumentation.runOnMainSync { CaptureService.active!!.toggle() }
         await("six verified continuous placements",90000) { (CaptureService.active?.verifiedMoves ?: 0)>=6 }
