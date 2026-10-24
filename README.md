@@ -1,16 +1,48 @@
-# Block Blast Auto v0.2 — screen recognition and autopilot
+# Block Blast Auto 0.4
 
-Prototype, Android 11+. Detects board (8x8), golden tray pieces in three pockets, calculates exhaustive placement of all visible pieces and drags each through AccessibilityService.
+Android 11+용 화면 인식 기반 자동 배치 앱입니다. `blockblast-auto-build` 브랜치의 독립 프로젝트이며 저장소의 main 프로젝트는 변경하지 않습니다.
 
-## Setup
-1. Install APK, open app, enable AccessibilityService.
-2. Tap Screen Share, approve Android capture consent.
-3. Open Block Blast (portrait, 709x1536 screenshot layout).
-4. Tap overlay "▶ 자동 시작".
-5. Stop via overlay or stop screen capture in app.
+## 사용
 
-## Important
-Screenshot-dependent recognition and gestures are **experimental** and not validated on a physical device. No guarantee of survival or score. A screenshot can differ because of display cutouts, game version, animation and phone resolution. Adjust Y offset in app if blocks release above/below desired cells. On-device only; no upload/network permission.
+1. APK를 설치하고 앱에서 **접근성 설정 열기**를 눌러 Block Blast Auto를 허용합니다.
+2. 앱에서 **화면 공유 시작**을 누르고 **전체 화면** 공유에 동의합니다.
+3. 블록 블라스트를 세로 화면으로 열고 우측 위 **▶ 자동 시작**을 누릅니다.
+4. 정지 버튼이나 알림의 종료 버튼으로 중단할 수 있습니다. 회전·앱 전환·공유 종료 후에는 다시 시작합니다.
 
-## Safety
-Requires explicit MediaProjection consent. Only operates after user toggles start; manual stop always available.
+화면 공유와 접근성은 사용자 동의 후에만 사용합니다. 화면은 메모리에서 분석하고 외부로 전송하지 않습니다. 인터넷, 저장소, 루트 권한을 사용하지 않습니다. 접근성의 화면 내용 조회는 조작 대상 앱을 확인하는 데 사용합니다.
+
+## 변경된 동작
+
+- 화면 비율만으로 좌표를 추측하지 않고 8×8 격자와 칸 간격을 찾습니다.
+- 노란색 한 종류뿐 아니라 여러 밝은 블록 색을 인식합니다. 모양을 읽지 못한 보관함은 빈칸으로 넘기지 않고 해당 화면을 거부합니다.
+- L자·대각선·긴 블록의 실제 셀을 읽고 **채워진 셀 내부**를 집습니다.
+- 손가락을 유지하는 접근성 연속 제스처로 블록을 들어 올립니다. 드래그 중 확대된 블록을 화면에서 찾아 실제 위치 차이만큼 이동합니다.
+- 정렬을 확인한 뒤 놓고, 줄 삭제 후 예상 게임판과 남은 보관함이 정확히 일치해야 다음 수를 진행합니다.
+- 같은 보드가 그대로 남은 실패만 1회 재시도합니다. 위치 측정 실패, 잘못 놓인 결과, 터치 취소는 중단합니다.
+- 세 블록의 순서와 위치를 제한된 빔 탐색으로 계산합니다. 줄 삭제, 큰 빈 공간, 긴 빈 줄, 고립된 빈칸을 평가합니다. 전부 배치할 수 없더라도 가능한 부분 배치를 반환합니다.
+- 캡처 이미지는 최대 720픽셀 너비로 한 번 복사합니다. 행 패딩과 마지막 행의 짧은 버퍼를 처리하며, 하드웨어 버퍼나 Bitmap을 보관하지 않습니다.
+
+기존 수동 `dragYOffset` 설정은 사용하지 않습니다. 실제 블록 위치를 측정할 수 없으면 임의의 Y 보정값으로 계속 조작하지 않습니다.
+
+## 검증 범위와 한계
+
+원본 게임 스크린샷 2장, 크기/위치 변화, 여러 색, 모호한 화면 거부, 실제 RGBA 버퍼, 합법 배치/동시 줄 삭제와 시뮬레이션은 `bash tools/check-core.sh`로 검사합니다.
+
+`AutoplayDeviceTest`는 Android 에뮬레이터에서 실제 MediaProjection과 AccessibilityService를 사용합니다. 별도 디버그용 테스트 판이 블록을 손가락 위로 띄우므로 이미지 측정, 정렬, 연속 설치와 중단을 검증할 수 있습니다. **이 판은 실제 Block Blast가 아닙니다.** 테스트 Activity는 외부에 공개하지 않으며 런처 메뉴에도 표시하지 않습니다.
+
+실제 게임 앱과 사용자의 실기기에서는 검증하지 않았습니다. 게임 버전, 흐린/어두운 블록, 이펙트, 고스트 미리보기, 가려진 보관함, 분할 화면 및 다른 격자 스타일은 인식되지 않을 수 있습니다. 특정 점수나 무한 생존을 보장하지 않습니다. 인식이 불확실하면 멈추는 방향을 우선합니다.
+
+## 빌드와 테스트
+
+JDK 17, Android SDK 35, Gradle 8.9를 사용합니다.
+
+```sh
+bash tools/check-core.sh
+gradle :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug
+# 에뮬레이터에서만 실행: 테스트 대상 접근성 설정을 변경합니다.
+bash tools/device-check.sh
+```
+
+[브랜치의 GitHub Actions](https://github.com/shinminjun06/youtube-skipper/actions?query=branch%3Ablockblast-auto-build)에서 **Build BlockBlast APK** 실행을 열고 `BlockBlastAuto-debug-apk`와 `BlockBlastAuto-verification`을 다운로드합니다. ZIP 안의 APK를 압축 해제해 설치합니다.
+
+배포 파일은 디버그 서명입니다. 이전 개발 APK와 인증서가 달라 설치가 거부되면 기존 Block Blast Auto를 제거한 뒤 설치해야 할 수 있습니다. 게임 앱이나 게임 저장 데이터는 변경하지 않습니다.

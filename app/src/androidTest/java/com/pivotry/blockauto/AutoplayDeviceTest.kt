@@ -22,6 +22,7 @@ class AutoplayDeviceTest {
     private fun await(message: String,timeout: Long=12000,condition: ()->Boolean) {
         val until=System.currentTimeMillis()+timeout
         while(System.currentTimeMillis()<until) { if(condition())return;Thread.sleep(80) }
+        runCatching { shell("screencap -p /data/local/tmp/blockblast-failure.png") }
         Assert.fail(message+" status="+CaptureService.active?.statusMessage)
     }
     private fun shell(command: String): String = android.os.ParcelFileDescriptor.AutoCloseInputStream(ui.executeShellCommand(command)).use { String(it.readBytes()) }
@@ -37,16 +38,8 @@ class AutoplayDeviceTest {
         Thread.sleep(500)
     }
     @Test fun a_continuedStrokeKeepsPointerDownAndStopReturnsToTray() {
-        instrumentation.startActivitySync(Intent(context,TouchFixtureActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        Thread.sleep(700)
+        alignAtBoard()
         val activity=TouchFixtureActivity.live!!
-        val screen=ui.takeScreenshot()!!
-        val w=screen.width.toFloat();val h=screen.height.toFloat();screen.recycle()
-        val done=CountDownLatch(1);var accepted=false
-        instrumentation.runOnMainSync {
-            AutoService.live!!.beginDrag(w*.21f,h*.2357f+w*.8858f+w*.8858f/8*2.4f,w*.5f,h*.88f,context.packageName) { accepted=it;done.countDown() }
-        }
-        Assert.assertTrue(done.await(8,TimeUnit.SECONDS));Assert.assertTrue(accepted)
         Assert.assertTrue("held across pickup and stage",activity.held)
         Assert.assertEquals("no premature ACTION_UP",0,activity.ups)
         Assert.assertEquals("one ACTION_DOWN across continued strokes",1,activity.downs)
@@ -73,9 +66,10 @@ class AutoplayDeviceTest {
         Thread.sleep(800)
         instrumentation.runOnMainSync { CaptureService.active!!.toggle() }
         await("six verified continuous placements",90000) { (CaptureService.active?.verifiedMoves ?: 0)>=6 }
-        instrumentation.runOnMainSync { CaptureService.active!!.halt("테스트 정지") }
         Assert.assertTrue(TouchFixtureActivity.live!!.placed>=6)
         Assert.assertEquals("no dropped/cancelled block in fixture",0,TouchFixtureActivity.live!!.cancelled)
+        instrumentation.runOnMainSync { CaptureService.active!!.halt("테스트 정지") }
+        await("stop after continuous play releases any next pickup") { !TouchFixtureActivity.live!!.held }
     }
     private fun screenshot(): Game.Image {
         val bitmap=ui.takeScreenshot()!!
@@ -121,5 +115,11 @@ class AutoplayDeviceTest {
         var accepted=true
         instrumentation.runOnMainSync { AutoService.live!!.beginDrag(100f,100f,200f,200f,context.packageName) { accepted=it } }
         Assert.assertFalse("foreground lock blocks new-game touches on launcher",accepted)
+    }
+    @Test fun e_disablingAccessibilityReleasesHeldPointer() {
+        alignAtBoard();val fixture=TouchFixtureActivity.live!!
+        shell("settings put secure enabled_accessibility_services ''")
+        await("service destruction releases pointer") { AutoService.live==null && !fixture.held }
+        Assert.assertEquals("service disable must not install a held block",0,fixture.placed)
     }
 }

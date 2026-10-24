@@ -92,7 +92,6 @@ class TouchFixtureActivity : Activity() {
             }
         }
         setContentView(game)
-        window.decorView.windowInsetsController?.hide(WindowInsets.Type.systemBars())
     }
     override fun onDestroy() { if(live===this)live=null;super.onDestroy() }
 }

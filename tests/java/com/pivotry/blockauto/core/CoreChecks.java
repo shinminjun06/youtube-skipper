@@ -53,6 +53,12 @@ public final class CoreChecks {
         check(verifier.matches(placed),"exact predicted board plus consumed source accepted");
         Game.Frame wrong=new Game.Frame(14L,remain,frame.left,frame.top,frame.cell,frame.width,frame.height,1);
         check(!verifier.matches(wrong),"piece landed one column away is failure");
+        Game.Shape single=new Game.Shape(1,new Game.Piece(0,0),200,1200,0xffffdd44);
+        Game.Frame last=new Game.Frame(0x808080808080807fL,java.util.Arrays.asList(single),frame.left,frame.top,frame.cell,frame.width,frame.height,1);
+        MoveVerifier clear=new MoveVerifier(last,0,7,0);
+        check(!clear.matches(new Game.Frame(0,java.util.Collections.emptyList(),frame.left,frame.top,frame.cell,frame.width,frame.height,1)),"last block waits for refreshed hand, not an empty animation");
+        check(clear.matches(frame),"last block simultaneous clear accepts complete fresh hand");
+        check(!clear.matches(new Game.Frame(0,frame.shapes,frame.left,frame.top+40,frame.cell,frame.width,frame.height,1)),"different geometry cannot verify stale placement");
     }
     static void variants() throws Exception {
         BufferedImage original=ImageIO.read(new File("tests/fixtures/empty-gold.png"));
