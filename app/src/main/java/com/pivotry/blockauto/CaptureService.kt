@@ -125,7 +125,7 @@ class CaptureService : Service() {
     }
     fun halt(reason: String) {
         running = false; generation.incrementAndGet(); targetApp = null
-        main.post { AutoService.live?.abortHold(); AutoService.live?.setRunning(false) }
+        main.post { AutoService.live?.abortHold(); AutoService.live?.clearGuide(); AutoService.live?.setRunning(false) }
         status(reason)
     }
     fun checkForeground() {
@@ -171,11 +171,12 @@ class CaptureService : Service() {
             return
         }
         val epoch = generation.get()
-        if (phase == Phase.PICKED || phase == Phase.ALIGN) { align(image,now,epoch); return }
+        
         val detection = Recognizer.analyze(image)
         val frame = detection.frame
         if (!valid(epoch)) return
         if (frame == null) {
+            AutoService.live?.clearGuide()
             val code = detection.code()
             if (code != lastDetectionCode) {
                 lastDetectionCode = code
@@ -218,20 +219,10 @@ class CaptureService : Service() {
         if (result == null) { halt("인식한 블록의 합법적인 배치가 없습니다"); return }
         if (retrySignature.isNotEmpty() && frame.signature() != retrySignature) { retries = 0; retrySignature = "" }
         val move = result.moves.first()
-        val shape = frame.shapes[move.piece]
-        before = frame; beforeImage = image; probeImage = null; probeDX = 0f; probeDY = 0f; selected = shape
-        verifier = MoveVerifier(frame,move.piece,move.x,move.y)
-        targetX = frame.left+move.x*frame.cell; targetY = frame.top+move.y*frame.cell
-        android.util.Log.i("BlockBlastAuto","plan board="+java.lang.Long.toHexString(frame.board)+" slot="+shape.slot+" target="+targetX+","+targetY+" cell="+frame.cell)
-        targetApp = app; corrections = 0; observed = null
-        // Use the known full-screen staging position for reliable recognition
-        // of the moving held object, including high-lift and static-preview themes.
-        fingerX = frame.width*.5f
-        fingerY = min(frame.height-frame.cell*.7f,frame.top+8*frame.cell+shape.piece.h*frame.cell*.5f+2*frame.cell)
-        status("블록 " + (shape.slot+1) + " 잡기 · 위치 측정")
-        gesture(epoch,Phase.PICKED) { service,done ->
-            service.beginDrag(shape.pickX*scaleX(frame),shape.pickY*scaleY(frame),fingerX*scaleX(frame),fingerY*scaleY(frame),app,done)
-        }
+        val piece = frame.shapes[move.piece].piece
+        val cells = piece.xs.indices.map { i -> Pair(move.x + piece.xs[i],move.y + piece.ys[i]) }
+        AutoService.live?.showGuide(frame.left,frame.top,frame.cell,cells,frame.width,frame.height)
+        status("추천 " + (frame.shapes[move.piece].slot+1) + "번 블록: " + (move.x+1) + "열 " + (move.y+1) + "행")
     }
     private fun recognitionMessage(result: Recognizer.Detection): String = when (result.issue) {
         Recognizer.Issue.FORMAT -> "화면 크기 불일치 · 전체 세로 화면을 공유하세요"
