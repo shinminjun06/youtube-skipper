@@ -200,7 +200,7 @@ class CaptureService : Service() {
             }
             return
         }
-        if (frame.shapes.isEmpty()) { stableSignature = ""; status("블록 대기 중 또는 게임 종료"); return }
+        if (frame.shapes.isEmpty()) { AutoService.live?.clearGuide(); stableSignature = ""; status("블록 대기 중 또는 게임 종료"); return }
         if (!stable(frame.signature(),now)) { status("판·블록 " + frame.shapes.size + "개 확인 · 화면 안정화 중"); return }
         // SurfaceView-based games can expose no accessibility root.
         // Stable visual recognition may still establish the game is on screen.
@@ -216,7 +216,7 @@ class CaptureService : Service() {
         status("배치 계산 중 · 블록 " + frame.shapes.size + "개")
         val result = Planner.best(frame.board,frame.shapes.map { it.piece },180)
         if (!valid(epoch)) return
-        if (result == null) { halt("인식한 블록의 합법적인 배치가 없습니다"); return }
+        if (result == null) { AutoService.live?.clearGuide(); status("합법적인 배치를 찾지 못했습니다"); return }
         if (retrySignature.isNotEmpty() && frame.signature() != retrySignature) { retries = 0; retrySignature = "" }
         val move = result.moves.first()
         val piece = frame.shapes[move.piece].piece
