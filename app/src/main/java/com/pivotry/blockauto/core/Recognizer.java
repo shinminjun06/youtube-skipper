@@ -154,6 +154,15 @@ public final class Recognizer {
                 materials.put(key,materials.getOrDefault(key,0)+1);
             }
         }
+        if(materials.isEmpty()) {
+            for(int y=y1;y<y2;y+=2)for(int x=x1;x<x2;x+=2) {
+                int c=im.at(x,y);
+                if(isTile(c)&&distance(c,bg)>100) {
+                    int key=((r(c)/16)<<8)|((g(c)/16)<<4)|(b(c)/16);
+                    materials.put(key,materials.getOrDefault(key,0)+1);
+                }
+            }
+        }
         int material=0;
         if(!materials.isEmpty()) {
             int key=materials.entrySet().stream().max(Map.Entry.comparingByValue()).get().getKey();
