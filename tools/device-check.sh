@@ -6,6 +6,9 @@ collect() {
   adb shell dumpsys accessibility > build/device-evidence/accessibility.txt || true
   adb exec-out screencap -p > build/device-evidence/final-screen.png || true
   adb pull /data/local/tmp/blockblast-failure.png build/device-evidence/failure.png || true
+  if adb shell run-as com.pivotry.blockauto test -s cache/held-failure-test.zip; then
+    adb exec-out run-as com.pivotry.blockauto cat cache/held-failure-test.zip > build/device-evidence/failed-diagnostic.zip || true
+  fi
 }
 trap collect EXIT
 adb shell wm size 720x1560

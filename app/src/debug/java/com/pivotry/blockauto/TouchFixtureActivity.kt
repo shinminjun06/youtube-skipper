@@ -74,7 +74,7 @@ class TouchFixtureActivity : Activity() {
                     if(preview&&oy>top+5*cell)for(i in p.xs.indices)tile(left+(3+p.xs[i])*cell,top+(1+p.ys[i])*cell,cell)
                     for(i in p.xs.indices)tile(ox+p.xs[i]*cell,oy+p.ys[i]*cell,cell)
                 }
-                if(attempted)rect(16f,height-64f,24f,24f,Color.rgb(0,255,136))
+                if(attempted)rect(16f,120f,24f,24f,Color.rgb(0,255,136))
                 canvasRef=null
             }
             override fun onTouchEvent(event: MotionEvent): Boolean {

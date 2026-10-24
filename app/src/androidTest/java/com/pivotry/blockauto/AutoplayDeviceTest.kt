@@ -96,8 +96,8 @@ class AutoplayDeviceTest {
             for(name in arrayOf("before.png","held.png","probe.png")) {
                 val bitmap=zip.getInputStream(zip.getEntry(name)).use { android.graphics.BitmapFactory.decodeStream(it) }
                 Assert.assertNotNull(bitmap);Assert.assertEquals(720,bitmap.width);Assert.assertEquals(1560,bitmap.height)
-                if(name!="before.png")Assert.assertEquals("frozen failure retains marker from before cancellation",0xff00ff88.toInt(),bitmap.getPixel(24,bitmap.height-52))
-                else Assert.assertNotEquals("pre-action image has no attempt marker",0xff00ff88.toInt(),bitmap.getPixel(24,bitmap.height-52))
+                if(name!="before.png")Assert.assertEquals("frozen failure retains marker from before cancellation",0xff00ff88.toInt(),bitmap.getPixel(24,132))
+                else Assert.assertNotEquals("pre-action image has no attempt marker",0xff00ff88.toInt(),bitmap.getPixel(24,132))
                 bitmap.recycle()
             }
         }
