@@ -149,7 +149,7 @@ public final class Recognizer {
         Map<Integer,Integer> materials=new HashMap<>();
         for(int y=y1;y<y2;y+=2)for(int x=x1;x<x2;x+=2) {
             int c=im.at(x,y);
-            if(isTile(c)&&distance(c,bg)>100) {
+            if(isTile(c)&&distance(c,bg)>100 && (hueDistance(c,bg)>.36f || hi(c)>hi(bg)+45)) {
                 int key=((r(c)/16)<<8)|((g(c)/16)<<4)|(b(c)/16);
                 materials.put(key,materials.getOrDefault(key,0)+1);
             }
@@ -166,9 +166,9 @@ public final class Recognizer {
             int c=im.at(x1+x,y1+y);
             int difference=distance(c,bg);
             if(difference>65)foreground++;
-            boolean face=isTile(c)&&difference>100&&sameMaterial(c,material);
-            boolean unknownBright=!isTile(c)&&difference>80&&(hi(c)>hi(bg)+20||hi(c)-Math.min(r(c),Math.min(g(c),b(c)))<25);
-            boolean foreignColor=isTile(c)&&difference>100&&hi(c)>hi(material)*.75f&&hueDistance(c,material)>=.3f;
+            boolean face=material!=0&&isTile(c)&&difference>100&&sameMaterial(c,material);
+            boolean unknownBright=!isTile(c)&&difference>115&&hi(c)>hi(bg)+35;
+            boolean foreignColor=material!=0&&isTile(c)&&difference>115&&hi(c)>hi(material)*.75f&&hueDistance(c,material)>=.3f&&hueDistance(c,bg)>.36f;
             // A foreign colored overlay must not erase an arm and turn the shape
             // into a smaller, seemingly legal piece after material filtering.
             if(unknownBright||foreignColor)unmodeledBright++;
