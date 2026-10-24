@@ -214,7 +214,8 @@ public final class Recognizer {
                 && distance(c,localBackground)>68
                 && (hi(c)>hi(localBackground)+25 || distance(c,material)>115);
             boolean lightUnknown=unknownBright && distance(c,localBackground)>75;
-            unexplained[y*rw+x]=!face&&(foreign||lightUnknown);
+            boolean lowContrastForeign=!face && isTile(c) && hi(c)<hi(bg)+15 && distance(c,bg)>28 && hueDistance(c,material)>.3f;
+            unexplained[y*rw+x]=!face&&(foreign||lightUnknown||lowContrastForeign);
             if(face) {
                 modeled++;
                 mask[y*rw+x]=true;minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);
