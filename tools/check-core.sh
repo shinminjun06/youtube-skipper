@@ -16,18 +16,20 @@ if ! grep -Fq 'cached = latest' app/src/main/java/com/pivotry/blockauto/CaptureS
   exit 1
 fi
 
-# Guard against silently regressing to advice-only mode: the planner must
-# actually drive the held pointer, then verify the result, and never auto-play
-# a knowingly incomplete tray.
-if ! grep -Fq 'if (phase == Phase.PICKED || phase == Phase.ALIGN) { align(image,now,epoch); return }' app/src/main/java/com/pivotry/blockauto/CaptureService.kt; then
-  echo 'FAIL: held-block observation path missing' >&2
+# Enforce read-only recommendation mode: no Android gesture injection.
+if grep -Eq 'dispatchGesture\(|service\.beginDrag\(|service\.moveHeld\(' app/src/main/java/com/pivotry/blockauto/{AutoService.kt,CaptureService.kt}; then
+  echo 'FAIL: gameplay gesture injection found in advisor mode' >&2
   exit 1
 fi
-if ! grep -Fq 'service.beginDrag(' app/src/main/java/com/pivotry/blockauto/CaptureService.kt; then
-  echo 'FAIL: autoplay drag action missing' >&2
+if ! grep -Fq 'GuideMask.strip' app/src/main/java/com/pivotry/blockauto/AutoService.kt; then
+  echo 'FAIL: captured highlight exclusion is missing' >&2
   exit 1
 fi
 if ! grep -Fq 'result.moves.size != frame.shapes.size' app/src/main/java/com/pivotry/blockauto/CaptureService.kt; then
-  echo 'FAIL: unsafe partial-hand autoplay not gated' >&2
+  echo 'FAIL: incomplete visible hand must not be recommended as safe' >&2
+  exit 1
+fi
+if grep -Fq 'android:canPerformGestures="true"' app/src/main/res/xml/accessibility.xml; then
+  echo 'FAIL: accessibility gesture capability must be disabled' >&2
   exit 1
 fi
