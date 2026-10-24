@@ -182,7 +182,7 @@ public final class Recognizer {
         Map<Integer,Integer> materials=new HashMap<>();
         for(int y=y1;y<y2;y+=2)for(int x=x1;x<x2;x+=2) {
             int c=im.at(x,y);
-            if(faceCandidate(c,bg)&&distance(c,bg)>100 && (hueDistance(c,bg)>.36f || hi(c)>hi(bg)+45 || (b(bg)>65 && light(c)>light(bg)+30))) {
+            if(faceCandidate(c,bg)&&distance(c,bg)>72 && (hueDistance(c,bg)>.36f || hi(c)>hi(bg)+45 || (b(bg)>65 && light(c)>light(bg)+30))) {
                 int key=((r(c)/16)<<8)|((g(c)/16)<<4)|(b(c)/16);
                 materials.put(key,materials.getOrDefault(key,0)+1);
             }
@@ -190,7 +190,7 @@ public final class Recognizer {
         if(materials.isEmpty()) {
             for(int y=y1;y<y2;y+=2)for(int x=x1;x<x2;x+=2) {
                 int c=im.at(x,y);
-                if(faceCandidate(c,bg)&&distance(c,bg)>100) {
+                if(faceCandidate(c,bg)&&distance(c,bg)>72) {
                     int key=((r(c)/16)<<8)|((g(c)/16)<<4)|(b(c)/16);
                     materials.put(key,materials.getOrDefault(key,0)+1);
                 }
@@ -208,7 +208,7 @@ public final class Recognizer {
             int c=im.at(x1+x,y1+y);
             int difference=distance(c,bg);
             if(difference>65)foreground++;
-            boolean face=material!=0&&faceCandidate(c,bg)&&difference>100&&sameMaterial(c,material);
+            boolean face=material!=0&&faceCandidate(c,bg)&&difference>72&&sameMaterial(c,material);
             boolean unknownBright=!faceCandidate(c,bg)&&difference>80&&(hi(c)>hi(bg)+20||hi(c)-Math.min(r(c),Math.min(g(c),b(c)))<25);
             if(unknownBright)unmodeledBright++;
             // Colored gold plates around real-game tiles are narrow decoration;
