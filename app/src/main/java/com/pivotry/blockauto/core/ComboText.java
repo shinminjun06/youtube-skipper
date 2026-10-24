@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
 public final class ComboText {
     private ComboText() {}
     private static final Pattern LABELED = Pattern.compile(
-        "(?i)\\bCOMBO[ \\t]*[:x\\u00d7]?[ \\t]*([0-9]{1,6})(?![0-9])");
+        "(?i)\\bCOMBO[ \\t]*[:x\\u00d7]?[ \\t]*([0-9]{1,3}(?:,[0-9]{3})*|[0-9]{1,6})(?![0-9,])");
 
     /** Returns the *displayed* combo number, or -1 if not established. */
     public static int displayed(String recognized) {
@@ -20,7 +20,7 @@ public final class ComboText {
         int found=-1;
         while(match.find()) {
             int candidate;
-            try {candidate=Integer.parseInt(match.group(1));}
+            try {candidate=Integer.parseInt(match.group(1).replace(",",""));}
             catch(NumberFormatException ignored) {continue;}
             if(candidate<1 || candidate>100000)continue;
             // Two inconsistent labels in the same frame are ambiguous.
