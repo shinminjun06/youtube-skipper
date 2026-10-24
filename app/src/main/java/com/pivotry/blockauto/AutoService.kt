@@ -66,9 +66,9 @@ class AutoService : AccessibilityService() {
     fun setRunning(value: Boolean) { main.post { toggleButton?.text = if (value) "■ 자동 정지" else "▶ 자동 시작" } }
     fun setStatus(value: String) { main.post { statusText?.text = value } }
 
-    fun beginDrag(sx: Float,sy: Float,tx: Float,ty: Float,expectedApp: String,done: (Boolean)->Unit) {
+    fun beginDrag(sx: Float,sy: Float,tx: Float,ty: Float,expectedApp: String?,done: (Boolean)->Unit) {
         check(Looper.myLooper() == Looper.getMainLooper())
-        if (stroke != null || inFlight || foregroundPackage() != expectedApp) { done(false); return }
+        if (stroke != null || inFlight || (expectedApp != null && foregroundPackage() != null && foregroundPackage() != expectedApp)) { done(false); return }
         fingerX = sx; fingerY = sy
         session++
         main.removeCallbacks(watchdog); main.postDelayed(watchdog,9000)
