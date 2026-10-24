@@ -370,7 +370,31 @@ public final class CoreChecks {
             frame.shapes.get(0).piece.key.equals("0,0;1,0;0,1;1,1;"),
             "remaining blue 2x2 piece reads without missing or phantom blocks");
     }
+
+    /** Warm brown real-world palette with pale diagonal and gold vertical pieces. */
+    static void brownThemeGeometry() {
+        int w=709,h=1536,p=79,l=40,t=360;
+        int[] pixels=new int[w*h];java.util.Arrays.fill(pixels,0xffb17954);
+        for(int y=t;y<t+8*p+3;y++)for(int x=l;x<l+8*p;x++)
+            pixels[y*w+x]=((x-l)%p<3||(y-t)%p<3)?0xff653a2a:0xff77492f;
+        // First: vertical gold 3; second: horizontal crimson 2;
+        // third: diagonal pale two-cell pair.
+        int[][][] coords={{{0,0},{0,1},{0,2}},{{0,0},{1,0}},{{1,0},{0,1}}};
+        int[] startsX={130,319,527},startsY={1122,1157,1140},colors={0xffd9b867,0xffbb3945,0xffe0dcbf};
+        for(int slot=0;slot<3;slot++)
+            for(int[] tile:coords[slot])
+                for(int y=startsY[slot]+tile[1]*35+2;y<startsY[slot]+(tile[1]+1)*35-2;y++)
+                    for(int x=startsX[slot]+tile[0]*35+2;x<startsX[slot]+(tile[0]+1)*35-2;x++)
+                        pixels[y*w+x]=colors[slot];
+        Recognizer.Detection det=Recognizer.analyze(new Game.Image(w,h,pixels));
+        check(det.frame!=null,"brown theme and neutral ivory tiles should be readable: "+det.code());
+        check(det.frame.board==0&&det.frame.shapes.size()==3,"brown board empty and all tray pieces present");
+        check(det.frame.shapes.get(0).piece.key.equals("0,0;0,1;0,2;"),"gold vertical piece");
+        check(det.frame.shapes.get(1).piece.key.equals("0,0;1,0;"),"red pair");
+        check(det.frame.shapes.get(2).piece.key.equals("1,0;0,1;"),"pale diagonal pair");
+    }
     public static void main(String[] args) throws Exception {
+        brownThemeGeometry();
         blueThemeGeometry();
         diagnosticArchive();
         highLift();
