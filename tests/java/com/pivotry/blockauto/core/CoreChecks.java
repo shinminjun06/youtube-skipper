@@ -51,7 +51,13 @@ public final class CoreChecks {
         Game.Frame mismatch=new Game.Frame(4L,java.util.Arrays.asList(
             after.shapes.get(1),after.shapes.get(2)),40,360,79,709,1536,1);
         tracker.observe(mismatch);
-        check(tracker.combo()==0,"unexpected placement never invents a combo");
+        check(tracker.combo()==102&&tracker.misses()==1,
+            "different valid manual placement must not erase a proven combo");
+        tracker.expect(mismatch,0,0,0);
+        Game.Frame impossible=new Game.Frame(-1L,java.util.Arrays.asList(
+            mismatch.shapes.get(1)),40,360,79,709,1536,1);
+        tracker.observe(impossible);
+        check(tracker.combo()==0,"impossible board transition invalidates inferred chain");
     }
     static void planning() {
         Game.Piece one=new Game.Piece(0,0);
@@ -446,8 +452,32 @@ public final class CoreChecks {
         check(det.frame.shapes.get(1).piece.key.equals("0,0;1,0;"),"red pair");
         check(det.frame.shapes.get(2).piece.key.equals("1,0;0,1;"),"pale diagonal pair");
     }
+
+    static void guideOverlaySanitization() {
+        int w=160,h=160,background=0xff233451;
+        int[] pixels=new int[w*h];java.util.Arrays.fill(pixels,background);
+        // The drawn guide ring is an accessibility overlay that appears
+        // in MediaProjection screenshots but must not alter recognition.
+        int ink=0xff00ffaa,box=30,size=60;
+        int l=box+(int)(size*.12f),r=box+(int)(size*.88f);
+        int t=box+(int)(size*.12f),b=box+(int)(size*.88f);
+        for(int y=t;y<=b;y++)for(int x=l;x<=r;x++)
+            if(x<=l+2||x>=r-2||y<=t+2||y>=b-2)pixels[y*w+x]=ink;
+        Game.Image raw=new Game.Image(w,h,pixels);
+        Game.Image clean=GuideMask.strip(raw,box,box,size,w,h,new int[]{0,0});
+        check(clean!=raw,"guide pixels are recognized and filtered");
+        check(clean.at(l+1,t+1)==background,"guide outline cannot be interpreted as tile color");
+        check(raw.at(l+1,t+1)==ink,"raw screenshot remains untouched");
+        check(clean.at(60,60)==background,"interior probe color is retained");
+        check(GuideMask.strip(raw,box,box,size,w,h,new int[]{1,1})==raw,
+            "unrelated positions cannot be rewritten");
+        check(GuideMask.strip(raw,box,box,size,w,h,new int[0])==raw,
+            "no guide does not copy entire screenshot");
+    }
+
     public static void main(String[] args) throws Exception {
         highScorePlanning();
+        guideOverlaySanitization();
         brownThemeGeometry();
         blueThemeGeometry();
         diagnosticArchive();
