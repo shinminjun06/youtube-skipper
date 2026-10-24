@@ -4,7 +4,7 @@ android {
  compileSdk = 35
  defaultConfig {
   applicationId = "com.pivotry.blockauto"; minSdk = 30; targetSdk = 34
-  versionCode = 20; versionName = "0.8.4"
+  versionCode = 21; versionName = "0.8.5"
   testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
  }
  buildFeatures { buildConfig = true }
