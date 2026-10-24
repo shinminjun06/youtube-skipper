@@ -23,8 +23,13 @@ public final class Recognizer {
     private static float hueDistance(int a,int b) {
         float delta=Math.abs(hue(a)-hue(b));return Math.min(delta,6-delta);
     }
+    private static boolean paleTile(int c,int bg) {
+        return r(c)>185 && g(c)>175 && b(c)>155 && r(c)-b(c)>13 &&
+            light(c)>light(bg)+42 && distance(c,bg)>130;
+    }
+    private static boolean faceCandidate(int c,int bg) {return isTile(c)||paleTile(c,bg);}
     private static boolean sameMaterial(int c,int material) {
-        return hueDistance(c,material)<.3f&&distance(c,material)<125&&hi(c)>hi(material)*.65f;
+        return (hueDistance(c,material)<.3f || (r(material)>185 && g(material)>175 && b(material)>155 && r(material)-b(material)>13 && distance(c,material)<75))&&distance(c,material)<125&&hi(c)>hi(material)*.65f;
     }
     private static float line(Game.Image im,float x,float y,boolean vertical) {
         float v=255;
@@ -104,8 +109,8 @@ public final class Recognizer {
             int c=im.at(l+(x+.5f)*p,t+(y+.5f)*p);
             if(hi(c)>195)continue;
             boolean uniform=true;
-            for(float dy:new float[]{.04f,.96f})for(float dx:new float[]{.04f,.96f})
-                if(distance(c,im.at(l+(x+dx)*p,t+(y+dy)*p))>20)uniform=false;
+            for(float dy:new float[]{.20f,.80f})for(float dx:new float[]{.04f,.96f})
+                if(distance(c,im.at(l+(x+dx)*p,t+(y+dy)*p))>32)uniform=false;
             if(!uniform)continue;
             if(hasReference&&distance(c,baseline)>20)return failure(Issue.BOARD_REFERENCE,"AMBIGUOUS_EMPTY_REFERENCE",-1,-1,-1);
             if(!hasReference){baseline=c;hasReference=true;}
@@ -173,7 +178,7 @@ public final class Recognizer {
         Map<Integer,Integer> materials=new HashMap<>();
         for(int y=y1;y<y2;y+=2)for(int x=x1;x<x2;x+=2) {
             int c=im.at(x,y);
-            if(isTile(c)&&distance(c,bg)>100 && (hueDistance(c,bg)>.36f || hi(c)>hi(bg)+45)) {
+            if(faceCandidate(c,bg)&&distance(c,bg)>100 && (hueDistance(c,bg)>.36f || hi(c)>hi(bg)+45)) {
                 int key=((r(c)/16)<<8)|((g(c)/16)<<4)|(b(c)/16);
                 materials.put(key,materials.getOrDefault(key,0)+1);
             }
@@ -181,7 +186,7 @@ public final class Recognizer {
         if(materials.isEmpty()) {
             for(int y=y1;y<y2;y+=2)for(int x=x1;x<x2;x+=2) {
                 int c=im.at(x,y);
-                if(isTile(c)&&distance(c,bg)>100) {
+                if(faceCandidate(c,bg)&&distance(c,bg)>100) {
                     int key=((r(c)/16)<<8)|((g(c)/16)<<4)|(b(c)/16);
                     materials.put(key,materials.getOrDefault(key,0)+1);
                 }
@@ -199,8 +204,8 @@ public final class Recognizer {
             int c=im.at(x1+x,y1+y);
             int difference=distance(c,bg);
             if(difference>65)foreground++;
-            boolean face=material!=0&&isTile(c)&&difference>100&&sameMaterial(c,material);
-            boolean unknownBright=!isTile(c)&&difference>80&&(hi(c)>hi(bg)+20||hi(c)-Math.min(r(c),Math.min(g(c),b(c)))<25);
+            boolean face=material!=0&&faceCandidate(c,bg)&&difference>100&&sameMaterial(c,material);
+            boolean unknownBright=!faceCandidate(c,bg)&&difference>80&&(hi(c)>hi(bg)+20||hi(c)-Math.min(r(c),Math.min(g(c),b(c)))<25);
             if(unknownBright)unmodeledBright++;
             // Colored gold plates around real-game tiles are narrow decoration;
             // a broad excluded face is evidence of an unreadable/covered block.
