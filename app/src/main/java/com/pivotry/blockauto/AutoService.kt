@@ -71,21 +71,23 @@ class AutoService : AccessibilityService() {
             private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
             override fun onDraw(canvas: Canvas) {
                 val g = guide ?: return
-                val sx = width.toFloat()/g.width
-                val sy = height.toFloat()/g.height
+                val origin = IntArray(2)
+                getLocationOnScreen(origin)
+                val sx = resources.displayMetrics.widthPixels.toFloat()/g.width
+                val sy = resources.displayMetrics.heightPixels.toFloat()/g.height
                 paint.style = Paint.Style.FILL
                 paint.color = 0x8800FF99.toInt()
                 for ((x,y) in g.cells) {
-                    val l=(g.left+x*g.cell)*sx
-                    val t=(g.top+y*g.cell)*sy
+                    val l=(g.left+x*g.cell)*sx-origin[0]
+                    val t=(g.top+y*g.cell)*sy-origin[1]
                     canvas.drawRoundRect(l+3,t+3,l+g.cell*sx-3,t+g.cell*sy-3,8f,8f,paint)
                 }
                 paint.style = Paint.Style.STROKE
                 paint.strokeWidth = 3f
                 paint.color = 0xFF00FFAA.toInt()
                 for ((x,y) in g.cells) {
-                    val l=(g.left+x*g.cell)*sx
-                    val t=(g.top+y*g.cell)*sy
+                    val l=(g.left+x*g.cell)*sx-origin[0]
+                    val t=(g.top+y*g.cell)*sy-origin[1]
                     canvas.drawRect(l+2,t+2,l+g.cell*sx-2,t+g.cell*sy-2,paint)
                 }
             }
