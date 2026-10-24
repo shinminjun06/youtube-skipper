@@ -57,6 +57,7 @@ class CaptureService : Service() {
     private var retrySignature = ""
     private var retries = 0
     private var lastDetectionCode = ""
+    private var noForegroundSince = 0L
 
     override fun onBind(intent: Intent?) = null
     override fun onCreate() {
@@ -110,7 +111,7 @@ class CaptureService : Service() {
         worker.post {
             if (!valid(epoch)) return@post
             phase = Phase.IDLE; inFlight = false; beforeImage = null; before = null; verifier = null
-            stableSignature = ""; observed = null; retries = 0; retrySignature = ""
+            stableSignature = ""; observed = null; retries = 0; retrySignature = ""; noForegroundSince = 0L
             actionFloor = Long.MIN_VALUE; phaseAt = SystemClock.uptimeMillis()
             status("게임판 확인 중")
         }
@@ -193,8 +194,17 @@ class CaptureService : Service() {
         }
         if (frame.shapes.isEmpty()) { stableSignature = ""; status("블록 대기 중 또는 게임 종료"); return }
         if (!stable(frame.signature(),now)) return
-        val app = AutoService.live?.foregroundPackage() ?: return
-        if (targetApp != null && targetApp != app) { halt("앱 전환 감지"); return }
+        // SurfaceView-based games can expose no accessibility root.
+        // Stable visual recognition may still establish the game is on screen.
+        val app = AutoService.live?.foregroundPackage()
+        if (app == null) {
+            if (noForegroundSince == 0L) noForegroundSince = now
+            if (now - noForegroundSince < 400L) {
+                status("게임 화면 검증 중")
+                return
+            }
+        } else noForegroundSince = 0L
+        if (targetApp != null && app != null && targetApp != app) { halt("앱 전환 감지"); return }
         val result = Planner.best(frame.board,frame.shapes.map { it.piece },180)
         if (!valid(epoch)) return
         if (result == null) { halt("인식한 블록의 합법적인 배치가 없습니다"); return }
@@ -263,7 +273,7 @@ class CaptureService : Service() {
         main.post {
             if (!valid(epoch)) return@post
             val service = AutoService.live
-            if (service == null || (targetApp != null && service.foregroundPackage() != targetApp)) { halt("접근성 또는 게임 화면 연결 끊김"); return@post }
+            if (service == null || (targetApp != null && service.foregroundPackage() != null && service.foregroundPackage() != targetApp)) { halt("접근성 또는 게임 화면 연결 끊김"); return@post }
             action(service) { ok ->
                 worker.post {
                     if (!valid(epoch)) return@post
