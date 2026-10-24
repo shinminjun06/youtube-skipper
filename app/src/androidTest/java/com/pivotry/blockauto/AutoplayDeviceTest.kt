@@ -34,7 +34,7 @@ class AutoplayDeviceTest {
         await("accessibility service: "+shell("settings get secure enabled_accessibility_services")) { AutoService.live!=null }
     }
     @After fun cleanup() {
-        instrumentation.runOnMainSync { CaptureService.active?.halt("테스트 종료");context.stopService(Intent(context,CaptureService::class.java));TouchFixtureActivity.live?.finish() }
+        instrumentation.runOnMainSync { CaptureService.active?.halt("테스트 종료");AutoService.live?.abortHold();context.stopService(Intent(context,CaptureService::class.java));TouchFixtureActivity.live?.finish() }
         Thread.sleep(500)
     }
     @Test fun a_continuedStrokeKeepsPointerDownAndStopReturnsToTray() {
