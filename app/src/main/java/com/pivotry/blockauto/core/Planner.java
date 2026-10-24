@@ -166,7 +166,7 @@ public final class Planner {
         // This prevents search timeouts/pruning from masquerading as a blocked
         // tray. It does not assert anything about the unknown NEXT tray.
         if(full==null && pieces.size()>1) {
-            State fallback=completeTray(board,pieces,initialCombo,initialMisses);
+            State fallback=completeTray(board,pieces,initialCombo,initialMisses,Math.max(60,milliseconds));
             if(fallback!=null)full=fallback;
         }
         // The solver NEVER intentionally prefers a partial line-clear route
@@ -178,18 +178,35 @@ public final class Planner {
     /** Find any complete legal hand independent of scoring beam width.
      * At most three pieces exist; memoize (board, used) dead ends.
      */
-    private static State completeTray(long board,List<Game.Piece> pieces,int chain,int misses) {
-        Set<String> failed=new HashSet<>();
-        return completeFrom(new State(board,0,Collections.emptyList(),0,chain,misses,0),
-            pieces,(1<<pieces.size())-1,failed);
+    private static final class FeasibilityBudget {
+        final long deadline;
+        int work;
+        boolean stopped;
+        FeasibilityBudget(int ms) { deadline=System.nanoTime()+ms*1_000_000L; }
+        boolean step() {
+            // A hard work limit plus a clock limit avoids freezing the image
+            // analysis worker on an impossible or adversarial hand.
+            if(++work>200000 || ((work&255)==0 && System.nanoTime()>deadline))
+                stopped=true;
+            return stopped;
+        }
     }
-    private static State completeFrom(State s,List<Game.Piece> pieces,int all,Set<String> failed) {
+    private static State completeTray(long board,List<Game.Piece> pieces,int chain,int misses,int milliseconds) {
+        Set<String> failed=new HashSet<>();
+        FeasibilityBudget budget=new FeasibilityBudget(milliseconds);
+        return completeFrom(new State(board,0,Collections.emptyList(),0,chain,misses,0),
+            pieces,(1<<pieces.size())-1,failed,budget);
+    }
+    private static State completeFrom(State s,List<Game.Piece> pieces,int all,
+                                     Set<String> failed,FeasibilityBudget budget) {
         if(s.used==all)return s;
+        if(budget.step())return null;
         String key=s.board+":"+s.used;
         if(failed.contains(key))return null;
         for(int i=0;i<pieces.size();i++)if((s.used&(1<<i))==0) {
             Game.Piece piece=pieces.get(i);
             for(int y=0;y<=8-piece.h;y++)for(int x=0;x<=8-piece.w;x++) {
+                if(budget.step())return null;
                 Rules.Placement p=Rules.place(s.board,piece,x,y);
                 if(p==null)continue;
                 int nextMisses=p.lines>0?0:s.misses+1;
@@ -202,11 +219,11 @@ public final class Planner {
                 State child=new State(p.board,s.used|(1<<i),moves,
                     s.reward+points-broken,nextCombo,Math.min(3,nextMisses),
                     s.clears+(p.lines>0?1:0));
-                State completed=completeFrom(child,pieces,all,failed);
+                State completed=completeFrom(child,pieces,all,failed,budget);
                 if(completed!=null)return completed;
             }
         }
-        failed.add(key);
+        if(!budget.stopped)failed.add(key);
         return null;
     }
 
