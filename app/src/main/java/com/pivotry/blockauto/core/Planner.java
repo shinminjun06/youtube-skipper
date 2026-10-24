@@ -145,7 +145,10 @@ public final class Planner {
             // Protect all orderings of the visible hand. A global top-256
             // can discard every candidate placing the restrictive piece first.
             if(depth+1<pieces.size()) {
-                int maxPerMask=Math.max(1,256/((1<<pieces.size())-1));
+                int maskGroups=0;
+                for(int mask=1;mask<(1<<pieces.size());mask++)
+                    if(Integer.bitCount(mask)==depth+1)maskGroups++;
+                int maxPerMask=Math.max(1,256/Math.max(1,maskGroups));
                 Map<Integer,Integer> selectedCount=new HashMap<>();
                 List<State> diverse=new ArrayList<>();
                 for(State s:beam) {
