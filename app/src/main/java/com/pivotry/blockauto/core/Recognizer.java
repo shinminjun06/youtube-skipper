@@ -107,7 +107,7 @@ public final class Recognizer {
             for(float dy:new float[]{-.18f,0,.18f})for(float dx:new float[]{-.18f,0,.18f}) {
                 int c=im.at(l+(x+.5f+dx)*p,t+(y+.5f+dy)*p);
                 if(distance(c,baseline)>38) {
-                    if(!isTile(c) && distance(c,baseline)<90)return failure(Issue.BOARD_CELL,"UNKNOWN_COLOR",-1,y,x); // unknown dark/monochrome tile is not empty
+                    if(!isTile(c))return failure(Issue.BOARD_CELL,"UNKNOWN_COLOR",-1,y,x); // unknown dark/monochrome tile is not empty
                     hit++;
                 }
             }
