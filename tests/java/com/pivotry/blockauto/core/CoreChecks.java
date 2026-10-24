@@ -21,6 +21,11 @@ public final class CoreChecks {
         check(Planner.linePoints(2,101)==2020,"double line uses 20*C");
         check(Planner.linePoints(3,101)==6060,"triple line uses 60*C");
         check(Planner.linePoints(6,101)==30300,"six lines use 300*C");
+        check(Planner.linePoints(6,1000)==300000,"uncapped extreme combo rewards");
+        check(Planner.survival(0L)>Planner.survival(0x55aa55aa55aa55aaL),
+            "scattered free cells are not equivalent to usable 3x3/5-long spaces");
+        check(Planner.survival(0L)>Planner.survival(-1L),
+            "empty board is safer than a completely blocked board");
         Game.Piece one=new Game.Piece(0,0);
         Game.Piece square=new Game.Piece(0,0,1,0,0,1,1,1);
         long cross=0x808080808080807fL;
