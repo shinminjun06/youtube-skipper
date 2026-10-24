@@ -167,7 +167,7 @@ public final class Recognizer {
             int difference=distance(c,bg);
             if(difference>65)foreground++;
             boolean face=material!=0&&isTile(c)&&difference>100&&sameMaterial(c,material);
-            boolean unknownBright=!isTile(c)&&difference>115&&hi(c)>hi(bg)+35;
+            boolean unknownBright=!isTile(c)&&difference>80&&(hi(c)>hi(bg)+20||hi(c)-Math.min(r(c),Math.min(g(c),b(c)))<25);
             boolean foreignColor=material!=0&&isTile(c)&&difference>115&&hi(c)>hi(material)*.75f&&hueDistance(c,material)>=.3f&&hueDistance(c,bg)>.36f;
             // A foreign colored overlay must not erase an arm and turn the shape
             // into a smaller, seemingly legal piece after material filtering.
