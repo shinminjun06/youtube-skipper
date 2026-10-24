@@ -160,8 +160,17 @@ class CaptureService : Service() {
         if (bounds.width() != physicalWidth || bounds.height() != physicalHeight) { halt("회전 감지 · 세로 화면에서 공유를 다시 시작하세요"); return }
         val img = reader?.acquireLatestImage()
         if (img != null) {
-            try { if (img.timestamp > timestamp) { cached = Vision.copy(img); timestamp = img.timestamp } }
-            finally { img.close() }
+            try {
+                // MediaProjection/ImageReader timestamps are not guaranteed to
+                // increase across all Android vendor implementations. Some
+                // streams report 0 or repeat a timestamp, leaving the SAME
+                // old board cached while the game visibly changes.
+                // acquireLatestImage() already gives the newest available buffer.
+                // Use our own monotonic capture sequence for action freshness.
+                val latest = Vision.copy(img)
+                cached = latest
+                timestamp = SystemClock.elapsedRealtimeNanos()
+            } finally { img.close() }
         }
         // Static screens may not produce new virtual-display buffers. Re-observe the
         // latest image, but never reuse an image from before an action across a move.
