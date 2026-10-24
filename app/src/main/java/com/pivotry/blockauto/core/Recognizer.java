@@ -31,6 +31,21 @@ public final class Recognizer {
     private static boolean sameMaterial(int c,int material) {
         return (hueDistance(c,material)<.3f || (r(material)>185 && g(material)>175 && b(material)>155 && r(material)-b(material)>13 && distance(c,material)<75))&&distance(c,material)<125&&hi(c)>hi(material)*.65f;
     }
+    private static boolean isFixedBlueEmpty(int c) {
+        return r(c)>=13&&r(c)<=74&&g(c)>=17&&g(c)<=86&&b(c)>=31&&b(c)<=128&&
+            b(c)>r(c)+10&&b(c)>g(c)+12;
+    }
+    private static boolean isFixedBlueFace(int c) {
+        return hi(c)>112 && (r(c)>87 || g(c)>95 || b(c)>145) &&
+            !isFixedBlueEmpty(c);
+    }
+    private static boolean isFixedBlueBoard(Game.Image im,float l,float t,float p) {
+        if (p<55 || p>im.width*.17f) return false;
+        int blue=0;
+        for(int y=0;y<8;y++)for(int x=0;x<8;x++)
+            if(isFixedBlueEmpty(im.at(l+(x+.5f)*p,t+(y+.5f)*p)))blue++;
+        return blue>=12;
+    }
     private static float line(Game.Image im,float x,float y,boolean vertical) {
         float v=255;
         for(int d=-2;d<=2;d++)v=Math.min(v,light(im.at(x+(vertical?d:0),y+(vertical?0:d))));
@@ -100,46 +115,28 @@ public final class Recognizer {
             }
         }
         if(p==0)return failure(Issue.GRID,"NO_8X8_GRID",-1,-1,-1);
-        long board=0;
         // Empty cells have the same interior material at center and all four
         // inset corners. An occupied dark center is NOT a background reference.
         // Two different flat dark materials are ambiguous: reject, never invert.
-        // Identify the empty board color by consensus among ALL 64 cell
-        // interiors. The previous first-flat-cell reference failed on themed
-        // beveled blocks (e.g., the blue screenshot, row 1 column 7).
-        int[] centers=new int[64];
-        for(int y=0;y<8;y++)for(int x=0;x<8;x++)
-            centers[y*8+x]=im.at(l+(x+.5f)*p,t+(y+.5f)*p);
-        int baseIndex=-1,dominant=0;
-        for(int i=0;i<64;i++){
-            int matches=0;
-            for(int j=0;j<64;j++)if(distance(centers[i],centers[j])<=24)matches++;
-            if(matches>dominant){dominant=matches;baseIndex=i;}
-        }
-        // An unreliable reference is never enough to recommend a move.
-        if(dominant<6)return failure(Issue.BOARD_REFERENCE,"NO_DOMINANT_EMPTY_REFERENCE",-1,-1,-1);
-        int red=0,green=0,blue=0,n=0;
-        for(int c:centers)if(distance(c,centers[baseIndex])<=24){
-            red+=r(c);green+=g(c);blue+=b(c);n++;
-        }
-        int baseline=(red/n<<16)|(green/n<<8)|(blue/n);
-        for(int y=0;y<8;y++)for(int x=0;x<8;x++){
-            int center=centers[y*8+x],empty=0,filled=0,other=0;
-            for(float dy:new float[]{-.17f,0f,.17f})for(float dx:new float[]{-.17f,0f,.17f}){
-                int c=im.at(l+(x+.5f+dx)*p,t+(y+.5f+dy)*p);
-                int delta=distance(c,baseline);
-                if(delta<=16)empty++;
-                else if(delta>48 && faceCandidate(c,baseline))filled++;
-                else other++;
+        long board=0;
+        // Fixed blue palette: a background cell has a dark navy interior,
+        // whereas a placed block has a bright blue, green, purple or gold face.
+        // Do not compare empty cells with a global color centroid: texture
+        // gradients made row 1 fail despite the cell being empty.
+        if (isFixedBlueBoard(im,l,t,p)) {
+            board=0L;
+            for(int y=0;y<8;y++)for(int x=0;x<8;x++) {
+                int filled=0,empty=0;
+                for(float dy:new float[]{-.2f,0f,.2f})
+                    for(float dx:new float[]{-.2f,0f,.2f}) {
+                        int c=im.at(l+(x+.5f+dx)*p,t+(y+.5f+dy)*p);
+                        if(isFixedBlueFace(c))filled++;
+                        else if(isFixedBlueEmpty(c))empty++;
+                    }
+                if(filled>=7)board|=1L<<(y*8+x);
+                else if(empty<7)return failure(Issue.BOARD_CELL,"BLUE_CELL_UNCERTAIN",-1,y,x);
             }
-            if(empty>=8 && distance(center,baseline)<=16)continue;
-            // Dark/palette-similar surfaces are deliberately held for manual
-            // review instead of incorrectly marking them empty or occupied.
-            if(filled>=7 && distance(center,baseline)>48 && hi(center)>112 &&
-                (light(center)>light(baseline)+13 || hueDistance(center,baseline)>.34f)){
-                board|=1L<<(y*8+x);
-            } else return failure(Issue.BOARD_CELL,"UNRELIABLE_CELL_EVIDENCE",-1,y,x);
-        }
+        } else return failure(Issue.BOARD_REFERENCE,"UNSUPPORTED_THEME_BLUE_ONLY",-1,-1,-1);
         List<Game.Shape> shapes=new ArrayList<>();
         // A completed line is an animation, not a stable actionable game board.
         for(long row:Rules.ROWS)if((board&row)==row)return failure(Issue.BOARD_ANIMATION,"CLEARING_ROW",-1,-1,-1);
