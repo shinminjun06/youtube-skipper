@@ -128,11 +128,11 @@ public final class Recognizer {
             for(float dy:new float[]{-.17f,0f,.17f})for(float dx:new float[]{-.17f,0f,.17f}){
                 int c=im.at(l+(x+.5f+dx)*p,t+(y+.5f+dy)*p);
                 int delta=distance(c,baseline);
-                if(delta<=34)empty++;
+                if(delta<=16)empty++;
                 else if(delta>48 && faceCandidate(c,baseline))filled++;
                 else other++;
             }
-            if(empty>=8 && distance(center,baseline)<=34)continue;
+            if(empty>=8 && distance(center,baseline)<=16)continue;
             // Dark/palette-similar surfaces are deliberately held for manual
             // review instead of incorrectly marking them empty or occupied.
             if(filled>=7 && distance(center,baseline)>48 && hi(center)>112 &&
