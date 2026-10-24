@@ -22,7 +22,10 @@ public final class Planner {
         State(long b,int u,List<Move> m,double points,int c,int misses,int clears){
             board=b;used=u;moves=m;reward=points;combo=c;this.misses=misses;
             this.clears=clears;depth=m.size();
-            rank=points+quality(b)+survival(b);
+            // A valuable long combo makes game-over far more costly than
+            // a short-term extra clear. Adapt risk aversion to that value.
+            double chainProtection=1.0+Math.min(160,c)*0.055;
+            rank=points+quality(b)+survival(b)*chainProtection;
         }
     }
     // Variant-dependent, but the confirmed baseline uses 10*C for one or two
@@ -31,14 +34,19 @@ public final class Planner {
         if(lines<=0||combo<=0)return 0;
         return 10L*combo*(lines<=2?lines:lines*(lines-1));
     }
+    // How many placements remain for several hard, non-rotating future
+    // shapes? A single high score line is not worth closing all of them.
     private static int[] flexibility(long b) {
-        int square3=0,horiz5=0,vert5=0;
+        int square3=0,horiz5=0,vert5=0,wide3=0,tall3=0;
         for(int y=0;y<8;y++)for(int x=0;x<8;x++) {
-            if(x<=5&&y<=5&&(b&(0x70707L<<(8*y+x)))==0)square3++;
-            if(x<=3&&(b&(31L<<(8*y+x)))==0)horiz5++;
-            if(y<=3&&(b&(0x0101010101L<<(8*y+x)))==0)vert5++;
+            int shift=8*y+x;
+            if(x<=5&&y<=5&&(b&(0x70707L<<shift))==0)square3++;
+            if(x<=3&&(b&(31L<<shift))==0)horiz5++;
+            if(y<=3&&(b&(0x0101010101L<<shift))==0)vert5++;
+            if(x<=5&&y<=6&&(b&(0x0707L<<shift))==0)wide3++;
+            if(x<=6&&y<=5&&(b&(0x030303L<<shift))==0)tall3++;
         }
-        return new int[]{square3,horiz5,vert5};
+        return new int[]{square3,horiz5,vert5,wide3,tall3};
     }
     static double survival(long b) {
         int[] f=flexibility(b);
@@ -46,10 +54,18 @@ public final class Planner {
         double penalty=0;
         if(f[0]==0)penalty+=900;
         else if(f[0]==1)penalty+=120;
-        if(f[1]==0)penalty+=180;
-        if(f[2]==0)penalty+=180;
-        if(empty<18)penalty+=(18-empty)*35.0;
-        else if(empty<28)penalty+=(28-empty)*6.0;
+        if(f[1]==0)penalty+=220;
+        if(f[2]==0)penalty+=220;
+        if(f[3]==0)penalty+=300;
+        if(f[4]==0)penalty+=300;
+        // A board with no common large-piece footprints is precarious even
+        // when its raw empty cell count looks respectable.
+        if(f[0]==0 && f[1]==0 && f[2]==0)penalty+=650;
+        if(empty<18)penalty+=(18-empty)*48.0;
+        else if(empty<28)penalty+=(28-empty)*8.0;
+        // Multiple possible placements are much safer than a single pocket.
+        penalty-=Math.min(12,f[0])*12.0+
+            Math.min(12,f[3])*7.0+Math.min(12,f[4])*7.0;
         return -penalty;
     }
     static double quality(long b) {
@@ -72,7 +88,8 @@ public final class Planner {
         }
         int[] f=flexibility(b);
         return empty*1.25+open2*.6+open3*1.4+lines*.12-isolated*18+
-            Math.min(8,f[0])*12+Math.min(5,f[1])*4+Math.min(5,f[2])*4;
+            Math.min(8,f[0])*12+Math.min(5,f[1])*4+Math.min(5,f[2])*4+
+            Math.min(8,f[3])*6+Math.min(8,f[4])*6;
     }
     private static double objective(State s) {
         // First protect the ability to accept common future large pieces.
@@ -94,7 +111,7 @@ public final class Planner {
         State partial=null,full=null;
         int expanded=0;
         for(int depth=0;depth<pieces.size();depth++) {
-            Map<String,State> unique=new HashMap<>();
+            Map<String,State> unique=new LinkedHashMap<>();
             boolean exhausted=false;
             outer:for(State s:beam)for(int i=0;i<pieces.size();i++)if((s.used&(1<<i))==0) {
                 Game.Piece piece=pieces.get(i);
@@ -125,7 +142,20 @@ public final class Planner {
             if(unique.isEmpty())break;
             beam=new ArrayList<>(unique.values());
             beam.sort((a,b)->Double.compare(objective(b),objective(a)));
-            if(beam.size()>256)beam=new ArrayList<>(beam.subList(0,256));
+            // Protect all orderings of the visible hand. A global top-256
+            // can discard every candidate placing the restrictive piece first.
+            if(depth+1<pieces.size()) {
+                int maxPerMask=Math.max(1,256/((1<<pieces.size())-1));
+                Map<Integer,Integer> selectedCount=new HashMap<>();
+                List<State> diverse=new ArrayList<>();
+                for(State s:beam) {
+                    int count=selectedCount.getOrDefault(s.used,0);
+                    if(count>=maxPerMask)continue;
+                    diverse.add(s);selectedCount.put(s.used,count+1);
+                    if(diverse.size()==256)break;
+                }
+                beam=diverse;
+            } else if(beam.size()>256)beam=new ArrayList<>(beam.subList(0,256));
             if(exhausted)break;
         }
         // If the bounded high-score beam never reached a full hand, run a
