@@ -204,7 +204,17 @@ public final class Recognizer {
             if(unknownBright)unmodeledBright++;
             // Colored gold plates around real-game tiles are narrow decoration;
             // a broad excluded face is evidence of an unreadable/covered block.
-            unexplained[y*rw+x]=!face&&difference>40;
+            // Compare against the locally sampled background rather than the
+            // quantized pocket-wide mode: purple gradients must not look like
+            // a solid occluding rectangle. Preserve strict rejection of
+            // genuine foreign-color surfaces.
+            int localBackground=im.at(x1+x,Math.max(0,y1-12));
+            boolean foreign=material!=0 && isTile(c)
+                && hueDistance(c,material)>.33f
+                && distance(c,localBackground)>68
+                && (hi(c)>hi(localBackground)+25 || distance(c,material)>115);
+            boolean lightUnknown=unknownBright && distance(c,localBackground)>75;
+            unexplained[y*rw+x]=!face&&(foreign||lightUnknown);
             if(face) {
                 modeled++;
                 mask[y*rw+x]=true;minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);
