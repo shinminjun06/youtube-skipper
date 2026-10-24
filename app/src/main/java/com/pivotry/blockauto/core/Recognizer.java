@@ -204,7 +204,7 @@ public final class Recognizer {
             if(unknownBright)unmodeledBright++;
             // Colored gold plates around real-game tiles are narrow decoration;
             // a broad excluded face is evidence of an unreadable/covered block.
-            unexplained[y*rw+x]=!face&&difference>70&&isTile(c)&&hueDistance(c,material)>.3f;
+            unexplained[y*rw+x]=!face&&difference>40;
             if(face) {
                 modeled++;
                 mask[y*rw+x]=true;minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);
