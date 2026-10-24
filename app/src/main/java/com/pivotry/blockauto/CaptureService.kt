@@ -56,6 +56,7 @@ class CaptureService : Service() {
     private var corrections = 0
     private var retrySignature = ""
     private var retries = 0
+    private var lastDetectionCode = ""
 
     override fun onBind(intent: Intent?) = null
     override fun onCreate() {
@@ -163,13 +164,20 @@ class CaptureService : Service() {
         }
         val epoch = generation.get()
         if (phase == Phase.PICKED || phase == Phase.ALIGN) { align(image,now,epoch); return }
-        val frame = Recognizer.read(image)
+        val detection = Recognizer.analyze(image)
+        val frame = detection.frame
         if (!valid(epoch)) return
         if (frame == null) {
-            if (phase == Phase.VERIFY && now-phaseAt > 3500) halt("설치 결과를 읽지 못해 정지했습니다")
-            else if (phase == Phase.IDLE) { stableSignature = ""; status("게임판 미검출 · 세로 게임 화면을 열어주세요") }
+            val code = detection.code()
+            if (code != lastDetectionCode) {
+                lastDetectionCode = code
+                android.util.Log.i("BlockBlastAuto","recognition " + code + " image=" + image.width + "x" + image.height)
+            }
+            if (phase == Phase.VERIFY && now-phaseAt > 3500) halt("설치 확인 중단 · " + recognitionMessage(detection))
+            else if (phase == Phase.IDLE) { stableSignature = ""; status(recognitionMessage(detection)) }
             return
         }
+        lastDetectionCode = ""
         if (phase == Phase.VERIFY) {
             if (stable(frame.signature(),now) && verifier!!.matches(frame)) {
                 verifiedMoves++; status("설치 확인 · " + verifiedMoves + "수")
@@ -204,6 +212,20 @@ class CaptureService : Service() {
         gesture(epoch,Phase.PICKED) { service,done ->
             service.beginDrag(shape.pickX*scaleX(frame),shape.pickY*scaleY(frame),fingerX*scaleX(frame),fingerY*scaleY(frame),app,done)
         }
+    }
+    private fun recognitionMessage(result: Recognizer.Detection): String = when (result.issue) {
+        Recognizer.Issue.FORMAT -> "화면 크기 불일치 · 전체 세로 화면을 공유하세요"
+        Recognizer.Issue.BLACK_FRAME -> "검은 화면 수신 · 전체 화면 공유를 다시 시작하세요"
+        Recognizer.Issue.GRID -> "8×8 격자 미검출 · 게임판이 보이는지 확인하세요"
+        Recognizer.Issue.BOARD_REFERENCE -> "판 인식됨 · 빈칸 기준 색상 확인 실패"
+        Recognizer.Issue.BOARD_CELL -> "판 인식됨 · ${result.row+1}행 ${result.column+1}열 색상 불확실"
+        Recognizer.Issue.BOARD_ANIMATION -> "판 인식됨 · 줄 삭제 효과가 끝나기를 기다리는 중"
+        Recognizer.Issue.TRAY -> "판 인식됨 · ${result.slot+1}번 블록 인식 대기 · " + when (result.reason) {
+            "OUTSIDE_CAPTURE" -> "공유 범위 부족"
+            "UNSUPPORTED_COLOR", "OCCLUDED_OR_UNKNOWN_COLOR" -> "색상 또는 가림 확인"
+            else -> "칸 경계·모양 확인"
+        }
+        else -> "인식 확인 중"
     }
     private fun align(image: Game.Image,now: Long,epoch: Int) {
         val frame = before ?: return

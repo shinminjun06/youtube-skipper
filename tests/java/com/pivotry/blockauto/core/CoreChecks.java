@@ -140,6 +140,9 @@ public final class CoreChecks {
         pixels=original.pixels.clone();
         for(int y=1140;y<1210;y++)for(int x=355;x<370;x++)pixels[y*original.width+x]=0xffababab;
         check(Recognizer.read(new Game.Image(original.width,original.height,pixels))==null,"occluded piece invalidates hand instead of becoming a partial shape");
+        pixels=original.pixels.clone();
+        for(int y=1176;y<1207;y++)for(int x=357;x<388;x++)pixels[y*709+x]=0xff38a8e8;
+        check(Recognizer.read(new Game.Image(709,1536,pixels))==null,"different colored occlusion cannot erase an arm and become a smaller piece");
     }
     static void tile(Game.Image im,float x,float y,float cell) {
         for(int yy=(int)y+1;yy<y+cell-1;yy++)for(int xx=(int)x+1;xx<x+cell-1;xx++) {
@@ -179,7 +182,50 @@ public final class CoreChecks {
         check(Recognizer.read(new Game.Image(709,1536,new int[709*1536]))==null,
             "black/locked/unrelated screen rejected");
     }
+    static void diagnostics() throws Exception {
+        Game.Image original=load("empty-gold.png");
+        Recognizer.Detection valid=Recognizer.analyze(original);
+        check(valid.issue==Recognizer.Issue.NONE&&valid.frame!=null&&valid.frame.shapes.size()==3,"valid image remains actionable through diagnostics");
+        Recognizer.Detection black=Recognizer.analyze(new Game.Image(709,1536,new int[709*1536]));
+        check(black.frame==null&&black.issue==Recognizer.Issue.BLACK_FRAME,"black capture is distinguished from grid/tray failure");
+        int[] pixels=original.pixels.clone();
+        for(int y=1140;y<1210;y++)for(int x=319;x<391;x++) {
+            int c=pixels[y*original.width+x];
+            if(Recognizer.isTile(c)&&((c>>16)&255)>210)pixels[y*original.width+x]=0xffd6d6d6;
+        }
+        Recognizer.Detection tray=Recognizer.analyze(new Game.Image(709,1536,pixels));
+        check(tray.frame==null&&tray.issue==Recognizer.Issue.TRAY&&tray.slot==1,"visible unknown second block is reported as tray failure, not missing board");
+        pixels=original.pixels.clone();
+        for(int y=367;y<435;y++)for(int x=46;x<114;x++)pixels[y*709+x]=0xff555555;
+        Recognizer.Detection board=Recognizer.analyze(new Game.Image(709,1536,pixels));
+        check(board.frame==null&&board.issue==Recognizer.Issue.BOARD_CELL&&board.row==0&&board.column==0,"uncertain board cell is located and never passed to planner");
+    }
+    static void darkPalette() throws Exception {
+        Game.Image original=load("empty-gold.png");
+        for(int darkColor:new int[]{0xff803080,0xff266c8a,0xff8e3828}) {
+            int[] pixels=original.pixels.clone();
+            // Same measured screenshot geometry and beveled faces, darker colored material.
+            for(int y=1120;y<1220;y++)for(int x=80;x<620;x++) {
+                int c=pixels[y*709+x];
+                int red=c>>16&255,green=c>>8&255,blue=c&255;
+                if(Math.abs(red-184)+Math.abs(green-120)+Math.abs(blue-40)>100) {
+                    float shade=Math.max(red,Math.max(green,blue))/255f;
+                    pixels[y*709+x]=0xff000000|Math.round((darkColor>>16&255)*shade)<<16|Math.round((darkColor>>8&255)*shade)<<8|Math.round((darkColor&255)*shade);
+                }
+            }
+            for(int y=367;y<435;y++)for(int x=46;x<114;x++)pixels[y*709+x]=darkColor;
+            Recognizer.Detection result=Recognizer.analyze(new Game.Image(709,1536,pixels));
+            check(result.frame!=null,"dark colored cells stay readable: "+Integer.toHexString(darkColor)+" "+result.code());
+            check(result.frame.board==1L,"dark occupied cell is not empty: "+Integer.toHexString(darkColor));
+            check(result.frame.shapes.size()==3&&result.frame.shapes.get(0).piece.key.equals("0,0;1,0;2,0;")&&
+                result.frame.shapes.get(1).piece.key.equals("0,0;1,0;1,1;")&&
+                result.frame.shapes.get(2).piece.key.equals("1,0;0,1;1,1;"),"dark tray preserves the exact three shapes");
+            for(Game.Shape shape:result.frame.shapes)check(result.frame!=null&&Recognizer.distance(new Game.Image(709,1536,pixels).at(shape.pickX,shape.pickY),darkColor)<30,"dark pickup hits actual material");
+        }
+    }
     public static void main(String[] args) throws Exception {
+        diagnostics();
+        darkPalette();
         recognition();
         planning();
         alignment();

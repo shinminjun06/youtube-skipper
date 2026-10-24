@@ -11,7 +11,21 @@ public final class Recognizer {
     static int hi(int c){return Math.max(r(c),Math.max(g(c),b(c)));}
     static float light(int c){return .299f*r(c)+.587f*g(c)+.114f*b(c);}
     static int distance(int a,int c){return Math.abs(r(a)-r(c))+Math.abs(g(a)-g(c))+Math.abs(b(a)-b(c));}
-    public static boolean isTile(int c){return hi(c)>150 && hi(c)-Math.min(r(c),Math.min(g(c),b(c)))>40;}
+    // Candidate colored material; grid/tray geometry and local background contrast
+    // decide occupancy. Dark saturated blocks must not require a bright face.
+    public static boolean isTile(int c){return hi(c)>75 && hi(c)-Math.min(r(c),Math.min(g(c),b(c)))>40;}
+    private static float hue(int c) {
+        int red=r(c),green=g(c),blue=b(c),max=hi(c),min=Math.min(red,Math.min(green,blue));
+        if(max==min)return 0;
+        float hue=max==red?(green-blue)/(float)(max-min):max==green?2+(blue-red)/(float)(max-min):4+(red-green)/(float)(max-min);
+        return hue<0?hue+6:hue;
+    }
+    private static float hueDistance(int a,int b) {
+        float delta=Math.abs(hue(a)-hue(b));return Math.min(delta,6-delta);
+    }
+    private static boolean sameMaterial(int c,int material) {
+        return hueDistance(c,material)<.3f&&distance(c,material)<125&&hi(c)>hi(material)*.65f;
+    }
     private static float line(Game.Image im,float x,float y,boolean vertical) {
         float v=255;
         for(int d=-2;d<=2;d++)v=Math.min(v,light(im.at(x+(vertical?d:0),y+(vertical?0:d))));
@@ -41,8 +55,27 @@ public final class Recognizer {
         }
         return agrees<85||topGood<6||bottomGood<6?-1:sum/112f+border/64f;
     }
-    public static Game.Frame read(Game.Image im) {
-        if(im.width<300 || im.height<im.width*1.15f) return null;
+    public enum Issue { NONE, FORMAT, BLACK_FRAME, GRID, BOARD_REFERENCE, BOARD_CELL, BOARD_ANIMATION, TRAY }
+    public static final class Detection {
+        public final Game.Frame frame;
+        public final Issue issue;
+        public final String reason;
+        public final int slot,row,column;
+        private Detection(Game.Frame frame,Issue issue,String reason,int slot,int row,int column) {
+            this.frame=frame;this.issue=issue;this.reason=reason;this.slot=slot;this.row=row;this.column=column;
+        }
+        public String code(){return issue+":"+reason+":"+slot+":"+row+":"+column;}
+    }
+    private static Detection failure(Issue issue,String reason,int slot,int row,int column) {
+        return new Detection(null,issue,reason,slot,row,column);
+    }
+    /** Compatibility entry point: only fully read frames may reach planning. */
+    public static Game.Frame read(Game.Image im) { return analyze(im).frame; }
+    public static Detection analyze(Game.Image im) {
+        if(im.width<300 || im.height<im.width*1.15f) return failure(Issue.FORMAT,"PORTRAIT_SIZE",-1,-1,-1);
+        boolean black=true;
+        for(int y=0;y<8;y++)for(int x=0;x<8;x++)if(hi(im.at((x+.5f)*im.width/8,(y+.5f)*im.height/8))>8)black=false;
+        if(black)return failure(Issue.BLACK_FRAME,"NO_VISIBLE_CONTENT",-1,-1,-1);
         int step=Math.max(2,im.width/350);
         float best=5,l=0,t=0,p=0;
         for(int y=(int)(im.height*.13f);y<im.height*.56f;y+=step) {
@@ -61,47 +94,48 @@ public final class Recognizer {
                 }
             }
         }
-        if(p==0)return null;
+        if(p==0)return failure(Issue.GRID,"NO_8X8_GRID",-1,-1,-1);
         long board=0;
         int baseline=0;float darkest=Float.MAX_VALUE;
         for(int y=0;y<8;y++)for(int x=0;x<8;x++) {
             int c=im.at(l+(x+.5f)*p,t+(y+.5f)*p);
             if(light(c)<darkest){darkest=light(c);baseline=c;}
         }
-        if(hi(baseline)>145)return null; // no trustworthy empty-cell reference
+        if(hi(baseline)>145)return failure(Issue.BOARD_REFERENCE,"NO_EMPTY_REFERENCE",-1,-1,-1); // no trustworthy empty-cell reference
         for(int y=0;y<8;y++)for(int x=0;x<8;x++) {
             int hit=0;
             for(float dy:new float[]{-.18f,0,.18f})for(float dx:new float[]{-.18f,0,.18f}) {
                 int c=im.at(l+(x+.5f+dx)*p,t+(y+.5f+dy)*p);
                 if(distance(c,baseline)>20) {
-                    if(!isTile(c))return null; // unknown dark/monochrome tile is not empty
+                    if(!isTile(c))return failure(Issue.BOARD_CELL,"UNKNOWN_COLOR",-1,y,x); // unknown dark/monochrome tile is not empty
                     hit++;
                 }
             }
             if(hit>=7)board|=1L<<(y*8+x);
-            else if(hit>1)return null; // animation or partially covered cell
+            else if(hit>1)return failure(Issue.BOARD_CELL,"PARTIAL_CELL",-1,y,x); // animation or partially covered cell
         }
         List<Game.Shape> shapes=new ArrayList<>();
         // A completed line is an animation, not a stable actionable game board.
-        for(long row:Rules.ROWS)if((board&row)==row)return null;
-        for(long col:Rules.COLS)if((board&col)==col)return null;
+        for(long row:Rules.ROWS)if((board&row)==row)return failure(Issue.BOARD_ANIMATION,"CLEARING_ROW",-1,-1,-1);
+        for(long col:Rules.COLS)if((board&col)==col)return failure(Issue.BOARD_ANIMATION,"CLEARING_COLUMN",-1,-1,-1);
         for(int slot=0;slot<3;slot++) {
             Tray result=tray(im,l,t,p,slot);
-            if(result.state==SlotState.UNCERTAIN)return null;
+            if(result.state==SlotState.UNCERTAIN)return failure(Issue.TRAY,result.reason,slot,-1,-1);
             if(result.shape!=null)shapes.add(result.shape);
         }
-        return new Game.Frame(board,shapes,l,t,p,im.width,im.height,Math.min(1,best/16));
+        return new Detection(new Game.Frame(board,shapes,l,t,p,im.width,im.height,Math.min(1,best/16)),Issue.NONE,"OK",-1,-1,-1);
     }
     private enum SlotState { EMPTY, RECOGNIZED, UNCERTAIN }
     private static final class Tray {
-        final Game.Shape shape; final SlotState state;
-        Tray(Game.Shape shape,SlotState state){this.shape=shape;this.state=state;}
+        final Game.Shape shape; final SlotState state; final String reason;
+        Tray(Game.Shape shape,SlotState state,String reason){this.shape=shape;this.state=state;this.reason=reason;}
     }
-    private static final Tray EMPTY=new Tray(null,SlotState.EMPTY),UNCERTAIN=new Tray(null,SlotState.UNCERTAIN);
+    private static final Tray EMPTY=new Tray(null,SlotState.EMPTY,"EMPTY");
+    private static Tray uncertain(String reason){return new Tray(null,SlotState.UNCERTAIN,reason);}
     private static Tray tray(Game.Image im,float l,float t,float p,int slot) {
         int x1=(int)(l+slot*8*p/3),x2=(int)(l+(slot+1)*8*p/3);
         int y1=(int)(t+8.7f*p),y2=Math.min(im.height-1,(int)(t+11.9f*p));
-        if(y2<=y1)return UNCERTAIN;
+        if(y2<=y1)return uncertain("OUTSIDE_CAPTURE");
         Map<Integer,Integer> colors=new HashMap<>();
         for(int y=y1;y<y2;y+=4)for(int x=x1;x<x2;x+=4) {
             int c=im.at(x,y),key=((r(c)/16)<<8)|((g(c)/16)<<4)|(b(c)/16);
@@ -109,6 +143,22 @@ public final class Recognizer {
         }
         int bg=colors.entrySet().stream().max(Map.Entry.comparingByValue()).get().getKey();
         bg=((bg>>8&15)*16+8)<<16 | ((bg>>4&15)*16+8)<<8 | (bg&15)*16+8;
+        // A bright-only mask loses dark material; a broad color mask joins the
+        // bevel shadows of adjacent cells. Estimate this pocket's face material
+        // first, then keep pixels near that color (rather than its cast shadow).
+        Map<Integer,Integer> materials=new HashMap<>();
+        for(int y=y1;y<y2;y+=2)for(int x=x1;x<x2;x+=2) {
+            int c=im.at(x,y);
+            if(isTile(c)&&distance(c,bg)>100) {
+                int key=((r(c)/16)<<8)|((g(c)/16)<<4)|(b(c)/16);
+                materials.put(key,materials.getOrDefault(key,0)+1);
+            }
+        }
+        int material=0;
+        if(!materials.isEmpty()) {
+            int key=materials.entrySet().stream().max(Map.Entry.comparingByValue()).get().getKey();
+            material=((key>>8&15)*16+8)<<16|((key>>4&15)*16+8)<<8|(key&15)*16+8;
+        }
         int rw=x2-x1,rh=y2-y1;
         boolean[] mask=new boolean[rw*rh];
         int minX=rw,minY=rh,maxX=-1,maxY=-1,foreground=0,unmodeledBright=0,modeled=0;
@@ -116,14 +166,19 @@ public final class Recognizer {
             int c=im.at(x1+x,y1+y);
             int difference=distance(c,bg);
             if(difference>65)foreground++;
-            if(!isTile(c)&&difference>80&&(hi(c)>hi(bg)+20||hi(c)-Math.min(r(c),Math.min(g(c),b(c)))<25))unmodeledBright++;
-            if(isTile(c)&&difference>100) {
+            boolean face=isTile(c)&&difference>100&&sameMaterial(c,material);
+            boolean unknownBright=!isTile(c)&&difference>80&&(hi(c)>hi(bg)+20||hi(c)-Math.min(r(c),Math.min(g(c),b(c)))<25);
+            boolean foreignColor=isTile(c)&&difference>100&&hi(c)>hi(material)*.75f&&hueDistance(c,material)>=.3f;
+            // A foreign colored overlay must not erase an arm and turn the shape
+            // into a smaller, seemingly legal piece after material filtering.
+            if(unknownBright||foreignColor)unmodeledBright++;
+            if(face) {
                 modeled++;
                 mask[y*rw+x]=true;minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);
             }
         }
-        if(maxX<minX)return foreground<p*p*.04?EMPTY:UNCERTAIN;
-        if(unmodeledBright>Math.max(p*p*.04,modeled*.15))return UNCERTAIN;
+        if(maxX<minX)return foreground<p*p*.04?EMPTY:uncertain("UNSUPPORTED_COLOR");
+        if(unmodeledBright>Math.max(p*p*.04,modeled*.15))return uncertain("OCCLUDED_OR_UNKNOWN_COLOR");
         // Separate beveled square faces. Their measured sizes set the lattice pitch;
         // a tiny gap does not add a phantom row or column.
         List<Integer> sizes=new ArrayList<>();
@@ -140,13 +195,13 @@ public final class Recognizer {
             }
             if(tail>p*p*.025 && bx-ax<p*.68 && by-ay<p*.68) {sizes.add(bx-ax+1);sizes.add(by-ay+1);}
         }
-        if(sizes.isEmpty())return UNCERTAIN;
+        if(sizes.isEmpty())return uncertain("NO_SEPARATE_FACES");
         Collections.sort(sizes);float unit=sizes.get(sizes.size()/2)+1;
-        if(unit<p*.26 || unit>p*.68)return UNCERTAIN;
+        if(unit<p*.26 || unit>p*.68)return uncertain("FACE_SIZE");
         int cols=Math.round((maxX-minX+1)/unit),rows=Math.round((maxY-minY+1)/unit);
-        if(cols<1||cols>5||rows<1||rows>5)return UNCERTAIN;
+        if(cols<1||cols>5||rows<1||rows>5)return uncertain("SHAPE_BOUNDS");
         float ux=(maxX-minX+1)/(float)cols,uy=(maxY-minY+1)/(float)rows;
-        if(Math.abs(ux-uy)>unit*.2)return UNCERTAIN;
+        if(Math.abs(ux-uy)>unit*.2)return uncertain("IRREGULAR_LATTICE");
         List<Integer> coords=new ArrayList<>();float pickX=0,pickY=0,near=Float.MAX_VALUE;int color=0;
         for(int y=0;y<rows;y++)for(int x=0;x<cols;x++) {
             int hits=0;
@@ -158,16 +213,16 @@ public final class Recognizer {
                 coords.add(x);coords.add(y);
                 float d=(x-(cols-1)*.5f)*(x-(cols-1)*.5f)+(y-(rows-1)*.5f)*(y-(rows-1)*.5f);
                 if(d<near){near=d;pickX=x1+minX+(x+.5f)*ux;pickY=y1+minY+(y+.5f)*uy;color=im.at(pickX,pickY);}
-            } else if(hits>1)return UNCERTAIN;
+            } else if(hits>1)return uncertain("PARTIAL_FACE");
         }
-        if(coords.isEmpty())return UNCERTAIN;
+        if(coords.isEmpty())return uncertain("NO_FILLED_CELL");
         int[] cells=coords.stream().mapToInt(i->i).toArray();
         Game.Piece piece=new Game.Piece(cells);
         // Reject disconnected decoration, but accept diagonal-connected game pieces.
         boolean[] reach=new boolean[piece.xs.length];reach[0]=true;int count=1;
         for(int k=0;k<piece.xs.length;k++)for(int a=0;a<reach.length;a++)if(reach[a])for(int b=0;b<reach.length;b++)
             if(!reach[b]&&Math.abs(piece.xs[a]-piece.xs[b])<=1&&Math.abs(piece.ys[a]-piece.ys[b])<=1){reach[b]=true;count++;}
-        if(count!=reach.length)return UNCERTAIN;
-        return new Tray(new Game.Shape(slot,piece,pickX,pickY,color),SlotState.RECOGNIZED);
+        if(count!=reach.length)return uncertain("DISCONNECTED_PIXELS");
+        return new Tray(new Game.Shape(slot,piece,pickX,pickY,color),SlotState.RECOGNIZED,"OK");
     }
 }
