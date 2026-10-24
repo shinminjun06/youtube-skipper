@@ -303,7 +303,7 @@ class CaptureService : Service() {
             }
             // An unexpectedly large correction indicates tracking the wrong
             // object or a game-specific drag offset that is not calibrated.
-            if (abs(dx)>frame.cell*3f || abs(dy)>frame.cell*4f) {
+            if (abs(dx)>frame.cell*7f || abs(dy)>frame.cell*10f) {
                 freezeFailure(image,"IMPLAUSIBLE_CORRECTION")
                 halt("블록 추적 좌표 불일치 · 안전 정지")
                 return
