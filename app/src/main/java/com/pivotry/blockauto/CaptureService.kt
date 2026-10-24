@@ -48,6 +48,9 @@ class CaptureService : Service() {
     private var stableAt = 0L
     private var before: Game.Frame? = null
     private var beforeImage: Game.Image? = null
+    private var probeImage: Game.Image? = null
+    private var probeDX = 0f
+    private var probeDY = 0f
     private var selected: Game.Shape? = null
     private var verifier: MoveVerifier? = null
     private var targetX = 0f
@@ -114,7 +117,7 @@ class CaptureService : Service() {
         AutoService.live?.setRunning(true)
         worker.post {
             if (!valid(epoch)) return@post
-            phase = Phase.IDLE; inFlight = false; beforeImage = null; before = null; verifier = null; failureTrace = null
+            phase = Phase.IDLE; inFlight = false; beforeImage = null; probeImage = null; before = null; verifier = null; failureTrace = null
             stableSignature = ""; observed = null; retries = 0; retrySignature = ""; noForegroundSince = 0L
             actionFloor = Long.MIN_VALUE; phaseAt = SystemClock.uptimeMillis()
             status("게임판 확인 중")
@@ -186,7 +189,7 @@ class CaptureService : Service() {
         if (phase == Phase.VERIFY) {
             if (stable(frame.signature(),now) && verifier!!.matches(frame)) {
                 verifiedMoves++; status("설치 확인 · " + verifiedMoves + "수")
-                phase = Phase.IDLE; stableSignature = ""; beforeImage = null; before = null
+                phase = Phase.IDLE; stableSignature = ""; beforeImage = null; probeImage = null; before = null
                 verifier = null; retries = 0; retrySignature = ""; actionFloor = Long.MIN_VALUE
             } else if (now-phaseAt > 3200) {
                 if (verifier!!.unchanged(frame) && retries < 1) {
@@ -216,7 +219,7 @@ class CaptureService : Service() {
         if (retrySignature.isNotEmpty() && frame.signature() != retrySignature) { retries = 0; retrySignature = "" }
         val move = result.moves.first()
         val shape = frame.shapes[move.piece]
-        before = frame; beforeImage = image; selected = shape
+        before = frame; beforeImage = image; probeImage = null; probeDX = 0f; probeDY = 0f; selected = shape
         verifier = MoveVerifier(frame,move.piece,move.x,move.y)
         targetX = frame.left+move.x*frame.cell; targetY = frame.top+move.y*frame.cell
         android.util.Log.i("BlockBlastAuto","plan board="+java.lang.Long.toHexString(frame.board)+" slot="+shape.slot+" target="+targetX+","+targetY+" cell="+frame.cell)
@@ -245,7 +248,17 @@ class CaptureService : Service() {
     private fun align(image: Game.Image,now: Long,epoch: Int) {
         val frame = before ?: return
         val shape = selected ?: return
-        val found = if (phase == Phase.PICKED) DragAlignment.locate(image,beforeImage!!,frame,shape,fingerX,fingerY)
+        if (phase == Phase.PICKED && probeImage == null) {
+            // Confirm movement while keeping the same pointer down. A static or
+            // whole-cell-snapped preview must not determine our finger offset.
+            probeImage = image; probeDX = frame.cell*.7f; probeDY = 0f
+            if (fingerX+probeDX > frame.width-2) probeDX = -probeDX
+            fingerX += probeDX
+            status("잡기 확인 · 추가 움직임 측정")
+            gesture(epoch,Phase.PICKED) { service,done -> service.moveHeld(fingerX*scaleX(frame),fingerY*scaleY(frame),true,320,done) }
+            return
+        }
+        val found = if (phase == Phase.PICKED) DragAlignment.locateMoving(image,beforeImage!!,probeImage!!,frame,shape,fingerX,fingerY,probeDX,probeDY)
             else DragAlignment.locateNear(image,beforeImage!!,frame,shape,targetX,targetY)
         if (!valid(epoch)) return
         if (found == null) {
@@ -283,8 +296,8 @@ class CaptureService : Service() {
             .put("width",image.width).put("height",image.height).put("physicalWidth",physicalWidth).put("physicalHeight",physicalHeight)
             .put("gridLeft",frame.left).put("gridTop",frame.top).put("cell",frame.cell).put("board",java.lang.Long.toHexString(frame.board))
             .put("slot",shape.slot).put("piece",shape.piece.key).put("pickX",shape.pickX).put("pickY",shape.pickY)
-            .put("fingerX",fingerX).put("fingerY",fingerY).put("targetX",targetX).put("targetY",targetY).put("uptimeMillis",SystemClock.uptimeMillis())
-        failureTrace = FailureTrace(original,image,data.toString(2))
+            .put("fingerX",fingerX).put("fingerY",fingerY).put("probeDX",probeDX).put("probeDY",probeDY).put("targetX",targetX).put("targetY",targetY).put("uptimeMillis",SystemClock.uptimeMillis())
+        failureTrace = FailureTrace(original,image,data.toString(2),probeImage)
         android.util.Log.i("BlockBlastAuto","held match failed " + data.toString())
     }
     fun hasDiagnostics() = failureTrace != null
@@ -331,7 +344,7 @@ class CaptureService : Service() {
         worker.post {
             display?.release(); display = null
             reader?.close(); reader = null
-            cached = null; beforeImage = null
+            cached = null; beforeImage = null; probeImage = null
             projection?.stop(); projection = null
             thread.quitSafely()
         }

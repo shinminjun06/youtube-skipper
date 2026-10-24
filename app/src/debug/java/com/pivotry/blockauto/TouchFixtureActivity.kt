@@ -13,6 +13,7 @@ class TouchFixtureActivity : Activity() {
     @Volatile var placed = 0
     @Volatile var cancelled = 0
     @Volatile var held = false
+    @Volatile var attempted = false
     @Volatile var downs = 0
     @Volatile var ups = 0
     private var board = 0L
@@ -30,6 +31,7 @@ class TouchFixtureActivity : Activity() {
         val plated = intent.getBooleanExtra("plated",false)
         val liftCells = intent.getFloatExtra("lift",1.85f)
         val ignorePickup = intent.getBooleanExtra("ignorePickup",false)
+        val preview = intent.getBooleanExtra("preview",false)
         window.setDecorFitsSystemWindows(false)
         game = object : View(this) {
             val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -69,14 +71,17 @@ class TouchFixtureActivity : Activity() {
                 if(selected>=0) {
                     val p=pieces[selected]
                     val ox=fingerX-grabX*cell;val oy=fingerY-lift-grabY*cell
+                    if(preview&&oy>top+5*cell)for(i in p.xs.indices)tile(left+(3+p.xs[i])*cell,top+(1+p.ys[i])*cell,cell)
                     for(i in p.xs.indices)tile(ox+p.xs[i]*cell,oy+p.ys[i]*cell,cell)
                 }
+                if(attempted)rect(16f,height-64f,24f,24f,Color.rgb(0,255,136))
                 canvasRef=null
             }
             override fun onTouchEvent(event: MotionEvent): Boolean {
                 when(event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
                         downs++;fingerX=event.x;fingerY=event.y
+                        if(ignorePickup)attempted=true
                         for(slot in 0..2)if(available[slot]&&!ignorePickup) {
                             val p=pieces[slot];val unit=cell*.447f
                             val rx=(event.x-trayX(slot,p))/unit;val ry=(event.y-trayY(p))/unit
@@ -99,7 +104,7 @@ class TouchFixtureActivity : Activity() {
                         }
                         selected=-1;held=false
                     }
-                    MotionEvent.ACTION_CANCEL -> { selected=-1;held=false;cancelled++ }
+                    MotionEvent.ACTION_CANCEL -> { selected=-1;held=false;attempted=false;cancelled++ }
                 }
                 invalidate();return true
             }

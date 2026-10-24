@@ -1,4 +1,5 @@
 package com.pivotry.blockauto.core;
+import java.util.*;
 public final class DragAlignment {
     private DragAlignment() {}
     private static final float[] SAMPLES={.22f,.5f,.78f};
@@ -43,11 +44,48 @@ public final class DragAlignment {
      * Search the visible height; every cell center must be newly rendered so
      * unchanged same-color board/tray cells cannot complete a false match. */
     public static Origin locate(Game.Image im,Game.Image before,Game.Frame frame,Game.Shape shape,float fingerX,float fingerY){
-        if(im.width!=before.width||im.height!=before.height)return null;
-        float cell=frame.cell;
+        List<Origin> candidates=stagedCandidates(im,before,frame,shape,fingerX,fingerY);
+        return candidates.size()==1?candidates.get(0):null;
+    }
+    /** A deliberate sub-cell pointer move distinguishes continuous held motion
+     * from stationary or whole-cell-snapped previews. Ambiguity never releases. */
+    public static Origin locateMoving(Game.Image im,Game.Image before,Game.Image previous,Game.Frame frame,Game.Shape shape,
+            float fingerX,float fingerY,float dx,float dy) {
+        if(im.width!=previous.width||im.height!=previous.height)return null;
+        List<Origin> now=stagedCandidates(im,before,frame,shape,fingerX,fingerY);
+        List<Origin> old=stagedCandidates(previous,before,frame,shape,fingerX-dx,fingerY-dy);
+        Origin selected=null;
+        for(Origin n:now) {
+            boolean follows=false;
+            for(Origin o:old)if(Math.abs(n.x-o.x-dx)<frame.cell*.14f&&Math.abs(n.y-o.y-dy)<frame.cell*.14f)follows=true;
+            if(follows){if(selected!=null)return null;selected=n;}
+        }
+        return selected;
+    }
+    private static List<Origin> stagedCandidates(Game.Image im,Game.Image before,Game.Frame frame,Game.Shape shape,float fingerX,float fingerY) {
+        List<Origin> result=new ArrayList<>();
+        if(im.width!=before.width||im.height!=before.height)return result;
+        float cell=frame.cell,step=Math.max(2,cell*.08f);
         float minX=Math.max(0,fingerX-(shape.piece.w+1)*cell),maxX=Math.min(im.width-shape.piece.w*cell,fingerX+cell);
         float minY=0,maxY=Math.min(im.height-shape.piece.h*cell,fingerY+cell*.5f);
-        return search(im,before,frame,shape,minX,maxX,minY,maxY,.3f,true);
+        List<float[]> seeds=new ArrayList<>();
+        for(float y=minY;y<=maxY;y+=step)for(float x=minX;x<=maxX;x+=step) {
+            float value=score(im,before,shape.piece,shape.color,x,y,cell,.3f,true);
+            if(value<.9f)continue;
+            float[] seed=null;
+            for(float[] candidate:seeds)if(Math.abs(x-candidate[0])<cell*.55f&&Math.abs(y-candidate[1])<cell*.55f){seed=candidate;break;}
+            if(seed==null) {
+                if(seeds.size()>=12)return result; // too many plausible objects
+                seeds.add(new float[]{x,y,x,y,value});
+            } else if(value>seed[4]){seed[2]=x;seed[3]=y;seed[4]=value;}
+        }
+        for(float[] seed:seeds) {
+            Origin origin=refine(im,before,frame,shape,minX,maxX,minY,maxY,.3f,true,seed[2],seed[3],seed[4]);
+            boolean duplicate=false;
+            for(Origin old:result)if(Math.abs(origin.x-old.x)<cell*.25f&&Math.abs(origin.y-old.y)<cell*.25f)duplicate=true;
+            if(!duplicate)result.add(origin);
+        }
+        return result;
     }
     private static Origin search(Game.Image im,Game.Image before,Game.Frame frame,Game.Shape shape,float minX,float maxX,float minY,float maxY,float minNovel,boolean changedCenters) {
         if(im.width!=before.width||im.height!=before.height)return null;
@@ -58,6 +96,11 @@ public final class DragAlignment {
             if(s>best){best=s;bx=x;by=y;}
         }
         if(best<.9f)return null;
+        return refine(im,before,frame,shape,minX,maxX,minY,maxY,minNovel,changedCenters,bx,by,best);
+    }
+    private static Origin refine(Game.Image im,Game.Image before,Game.Frame frame,Game.Shape shape,float minX,float maxX,float minY,float maxY,
+            float minNovel,boolean changedCenters,float bx,float by,float best) {
+        float cell=frame.cell,step=Math.max(2,cell*.08f);
         // Average the whole local plateau, not just one step around its first
         // sampled edge. Thick frames/downsampling can make that edge asymmetric.
         float radius=cell*.45f,sx=0,sy=0;int count=0;

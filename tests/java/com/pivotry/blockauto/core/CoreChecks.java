@@ -299,6 +299,20 @@ public final class CoreChecks {
         Game.Image changed=new Game.Image(gold.width,gold.height,oldBoard.pixels.clone());
         tile(changed,x,y,gf.cell);tile(changed,x+gf.cell,y,gf.cell);
         check(DragAlignment.locate(changed,oldBoard,gf,bar,350,1320)==null,"staging search cannot borrow unchanged old tile to complete a new piece");
+        Game.Shape ell=gf.shapes.get(1);
+        Game.Image one=lifted(gold,gf,ell,241,1008);
+        Game.Image two=lifted(one,gf,ell,241,gf.top+gf.cell);
+        check(DragAlignment.locate(two,gold,gf,ell,350,1320)==null,"distinct equally plausible held/preview shapes require movement evidence, not first match");
+        float delta=gf.cell*.7f;
+        Game.Image moving=lifted(gold,gf,ell,241+delta,1008);
+        Game.Image withStatic=lifted(moving,gf,ell,241,gf.top+gf.cell);
+        DragAlignment.Origin tracked=DragAlignment.locateMoving(withStatic,gold,two,gf,ell,350+delta,1320,delta,0);
+        check(tracked!=null&&Math.abs(tracked.x-(241+delta))<gf.cell*.13&&Math.abs(tracked.y-1008)<gf.cell*.13,"motion evidence follows held block and rejects static duplicate");
+        Game.Image withSnapped=lifted(moving,gf,ell,241+gf.cell,gf.top+gf.cell);
+        tracked=DragAlignment.locateMoving(withSnapped,gold,two,gf,ell,350+delta,1320,delta,0);
+        check(tracked!=null&&Math.abs(tracked.y-1008)<gf.cell*.13,"one-cell snapped preview is not continuous finger motion");
+        Game.Image twoMoving=lifted(moving,gf,ell,241+delta,gf.top+gf.cell);
+        check(DragAlignment.locateMoving(twoMoving,gold,two,gf,ell,350+delta,1320,delta,0)==null,"two equally moving candidates remain ambiguous");
     }
     static void diagnosticArchive() throws Exception {
         Game.Image before=new Game.Image(2,1,new int[]{0xffff0000,0xff00ff00});

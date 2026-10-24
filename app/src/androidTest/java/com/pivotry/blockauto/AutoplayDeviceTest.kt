@@ -52,7 +52,7 @@ class AutoplayDeviceTest {
     @Test fun g_goldPlatedPurpleThemeInstallsSixConsecutiveMoves() { continuousPlacements(false,true) }
     @Test fun h_highLiftOverBoardInstallsSixMoves() { continuousPlacements(false,true,3.4f) }
     @Test fun i_veryHighLiftOverBoardInstallsSixMoves() { continuousPlacements(false,true,4.2f) }
-    private fun startController(dark: Boolean,plated: Boolean,lift: Float,ignorePickup: Boolean = false): CaptureService {
+    private fun startController(dark: Boolean,plated: Boolean,lift: Float,ignorePickup: Boolean = false,preview: Boolean = false): CaptureService {
         val activity=instrumentation.startActivitySync(Intent(context,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         instrumentation.runOnMainSync {
             val views=ArrayList<View>()
@@ -67,13 +67,14 @@ class AutoplayDeviceTest {
                 ?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
         }
         await("projection service") { CaptureService.active!=null }
-        instrumentation.startActivitySync(Intent(context,TouchFixtureActivity::class.java).putExtra("dark",dark).putExtra("plated",plated).putExtra("lift",lift).putExtra("ignorePickup",ignorePickup).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        instrumentation.startActivitySync(Intent(context,TouchFixtureActivity::class.java).putExtra("dark",dark).putExtra("plated",plated).putExtra("lift",lift).putExtra("ignorePickup",ignorePickup).putExtra("preview",preview).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         Thread.sleep(800)
         instrumentation.runOnMainSync { CaptureService.active!!.toggle() }
         return CaptureService.active!!
     }
-    private fun continuousPlacements(dark: Boolean,plated: Boolean = false,lift: Float = 1.85f) {
-        startController(dark,plated,lift)
+    @Test fun k_stagingPreviewDoesNotStealHeldTracking() { continuousPlacements(false,true,3.4f,true) }
+    private fun continuousPlacements(dark: Boolean,plated: Boolean = false,lift: Float = 1.85f,preview: Boolean = false) {
+        startController(dark,plated,lift,preview=preview)
         await("six verified continuous placements",90000) { (CaptureService.active?.verifiedMoves ?: 0)>=6 }
         Assert.assertTrue(TouchFixtureActivity.live!!.placed>=6)
         Assert.assertEquals("no dropped/cancelled block in fixture",0,TouchFixtureActivity.live!!.cancelled)
@@ -84,6 +85,7 @@ class AutoplayDeviceTest {
         val service=startController(false,true,3.4f,true)
         await("ignored pickup stops with diagnostics",16000) { !service.isRunning()&&service.hasDiagnostics() }
         Assert.assertEquals("no blind drop on failed pickup",0,TouchFixtureActivity.live!!.placed)
+        await("cancel clears visible attempt marker") { !TouchFixtureActivity.live!!.attempted }
         val file=java.io.File(context.cacheDir,"held-failure-test.zip")
         val done=CountDownLatch(1);var error: String?="not called"
         instrumentation.runOnMainSync { service.saveDiagnostics(android.net.Uri.fromFile(file)) { error=it;done.countDown() } }
@@ -91,9 +93,12 @@ class AutoplayDeviceTest {
         java.util.zip.ZipFile(file).use { zip ->
             val data=zip.getInputStream(zip.getEntry("metadata.json")).bufferedReader().use { it.readText() }
             val meta=org.json.JSONObject(data);Assert.assertEquals("PICKED",meta.getString("phase"))
-            for(name in arrayOf("before.png","held.png")) {
+            for(name in arrayOf("before.png","held.png","probe.png")) {
                 val bitmap=zip.getInputStream(zip.getEntry(name)).use { android.graphics.BitmapFactory.decodeStream(it) }
-                Assert.assertNotNull(bitmap);Assert.assertEquals(720,bitmap.width);Assert.assertEquals(1560,bitmap.height);bitmap.recycle()
+                Assert.assertNotNull(bitmap);Assert.assertEquals(720,bitmap.width);Assert.assertEquals(1560,bitmap.height)
+                if(name!="before.png")Assert.assertEquals("frozen failure retains marker from before cancellation",0xff00ff88.toInt(),bitmap.getPixel(24,bitmap.height-52))
+                else Assert.assertNotEquals("pre-action image has no attempt marker",0xff00ff88.toInt(),bitmap.getPixel(24,bitmap.height-52))
+                bitmap.recycle()
             }
         }
         file.delete()
