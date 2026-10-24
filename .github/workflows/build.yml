@@ -22,15 +22,15 @@ jobs:
       - name: Verify APK and record source revision
         run: |
           mkdir -p build/apk
-          cp app/build/outputs/apk/debug/app-debug.apk build/apk/BlockBlastAdvisor-v0.9.0.apk
+          cp app/build/outputs/apk/debug/app-debug.apk build/apk/BlockBlastAuto-v1.0.0.apk
           printf '%s\n' "$GITHUB_SHA" > build/apk/SOURCE_COMMIT.txt
-          sha256sum build/apk/BlockBlastAdvisor-v0.9.0.apk > build/apk/SHA256SUMS.txt
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs build/apk/BlockBlastAdvisor-v0.9.0.apk > build/apk/SIGNATURE.txt
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions build/apk/BlockBlastAdvisor-v0.9.0.apk > build/apk/PERMISSIONS.txt
+          sha256sum build/apk/BlockBlastAuto-v1.0.0.apk > build/apk/SHA256SUMS.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs build/apk/BlockBlastAuto-v1.0.0.apk > build/apk/SIGNATURE.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions build/apk/BlockBlastAuto-v1.0.0.apk > build/apk/PERMISSIONS.txt
           if rg -q android.permission.INTERNET build/apk/PERMISSIONS.txt; then exit 1; fi
       - name: Enable KVM
         run: sudo chmod 666 /dev/kvm
-      - name: Advisor build verification (legacy drag tests excluded)
+      - name: Build verification (core and Android compilation)
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
