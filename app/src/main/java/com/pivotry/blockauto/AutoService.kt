@@ -3,6 +3,9 @@ package com.pivotry.blockauto
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.view.View
 import android.graphics.PixelFormat
 import android.os.Handler
 import android.os.Looper
@@ -20,6 +23,9 @@ class AutoService : AccessibilityService() {
     private val main = Handler(Looper.getMainLooper())
     private var floating: LinearLayout? = null
     private var toggleButton: Button? = null
+    private var guideView: View? = null
+    private var guide: Guide? = null
+    private data class Guide(val left: Float,val top: Float,val cell: Float,val cells: List<Pair<Int,Int>>,val width: Int,val height: Int)
     private var statusText: TextView? = null
     private lateinit var wm: WindowManager
     private var stroke: GestureDescription.StrokeDescription? = null
@@ -61,8 +67,42 @@ class AutoService : AccessibilityService() {
             PixelFormat.TRANSLUCENT
         ).apply { gravity = Gravity.TOP or Gravity.END; y = (6*dp).toInt() }
         wm.addView(layout,params)
+        val overlay = object : View(this) {
+            private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+            override fun onDraw(canvas: Canvas) {
+                val g = guide ?: return
+                val sx = width.toFloat()/g.width
+                val sy = height.toFloat()/g.height
+                paint.style = Paint.Style.FILL
+                paint.color = 0x8800FF99.toInt()
+                for ((x,y) in g.cells) {
+                    val l=(g.left+x*g.cell)*sx
+                    val t=(g.top+y*g.cell)*sy
+                    canvas.drawRoundRect(l+3,t+3,l+g.cell*sx-3,t+g.cell*sy-3,8f,8f,paint)
+                }
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = 3f
+                paint.color = 0xFF00FFAA.toInt()
+                for ((x,y) in g.cells) {
+                    val l=(g.left+x*g.cell)*sx
+                    val t=(g.top+y*g.cell)*sy
+                    canvas.drawRect(l+2,t+2,l+g.cell*sx-2,t+g.cell*sy-2,paint)
+                }
+            }
+        }
+        wm.addView(overlay,WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            PixelFormat.TRANSLUCENT
+        ))
+        guideView = overlay
         floating = layout; toggleButton = button; statusText = status
     }
+    fun showGuide(left: Float,top: Float,cell: Float,cells: List<Pair<Int,Int>>,width: Int,height: Int) {
+        main.post { guide = Guide(left,top,cell,cells,width,height); guideView?.invalidate() }
+    }
+    fun clearGuide() { main.post { guide = null; guideView?.invalidate() } }
     fun foregroundPackage(): String? = try { rootInActiveWindow?.packageName?.toString() } catch (_: Exception) { null }
     fun setRunning(value: Boolean) { main.post { toggleButton?.text = if (value) "■ 자동 정지" else "▶ 자동 시작" } }
     fun setStatus(value: String) { main.post { statusText?.text = value } }
@@ -145,7 +185,8 @@ class AutoService : AccessibilityService() {
         CaptureService.active?.halt("접근성 서비스 종료")
         if (live === this) live = null
         val overlay = floating; floating = null
-        main.postDelayed({ overlay?.let { runCatching { wm.removeView(it) } }; main.removeCallbacksAndMessages(null) },200)
+        val guideOverlay = guideView; guideView = null
+        main.postDelayed({ overlay?.let { runCatching { wm.removeView(it) } }; guideOverlay?.let { runCatching { wm.removeView(it) } }; main.removeCallbacksAndMessages(null) },200)
         super.onDestroy()
     }
 }
