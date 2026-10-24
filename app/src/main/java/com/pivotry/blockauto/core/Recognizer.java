@@ -246,6 +246,16 @@ public final class Recognizer {
             }
         }
         boolean centersReliable=!intervals.isEmpty()&&centeredArea>=modeled*.7f;
+        if(centersReliable) {
+            Collections.sort(intervals);float measured=intervals.get(intervals.size()/2);
+            // A merged outer column/row can be less than30% of the material.
+            // Every modeled pixel must fit, regardless of the area ratio.
+            centersReliable=minX>=Collections.min(centersX)-measured*.5f-2&&maxX<=Collections.max(centersX)+measured*.5f+2&&
+                minY>=Collections.min(centersY)-measured*.5f-2&&maxY<=Collections.max(centersY)+measured*.5f+2;
+            // Even when centers do not span the complete piece, their spacing
+            // remains useful for reconstructing its complete mask bounds.
+            unit=measured;
+        }
         float firstX,firstY,stepX,stepY;int cols,rows;
         if(centersReliable) {
             Collections.sort(intervals);unit=intervals.get(intervals.size()/2);

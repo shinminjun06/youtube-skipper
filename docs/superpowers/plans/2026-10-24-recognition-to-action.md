@@ -6,9 +6,9 @@ Evidence: latest user screenshot 323819 is a purple event theme with gold frames
 
 Scope: existing Kotlin/Java, no new permissions, no changes to main. Preserve external commits up to 54e72af. Previous review fixes are retained as regressions, rather than overwriting the newer theme support.
 
-- [ ] Detect original purple screenshot, exact manually labeled board 0c606a2f32eccdc8, exact three pieces and legal plan. Existing detector RED; new center spacing and decoration handling must pass.
-- [ ] Preserve safe rejection for ambiguous board reference and unknown/occluded faces. Previous regression corpus 806 assertions plus real purple fixture.
-- [ ] Make stabilization, planning, missing foreground identity and touch dispatch state visible. Avoid interpreting partial board detection as full hand readiness.
+- [x] Detect original purple screenshot, exact manually labeled board 0c606a2f32eccdc8, exact three pieces and legal plan. Existing detector RED; new center spacing and decoration handling must pass.
+- [x] Preserve safe rejection for ambiguous board reference and unknown/occluded faces. Previous regression corpus 806 assertions plus real purple fixture.
+- [x] Make stabilization, planning, missing foreground identity and touch dispatch state visible. Avoid interpreting partial board detection as full hand readiness.
 - [ ] Exercise native MediaProjection+Accessibility controller on gold, dark and gold-framed purple controlled fixtures; test stop, app switch and service disable.
 - [ ] Build a correctly named version 0.5.1 APK on GitHub Actions; verify source/hash/signature and provide APK. Physical device/actual game execution is not available here.
 

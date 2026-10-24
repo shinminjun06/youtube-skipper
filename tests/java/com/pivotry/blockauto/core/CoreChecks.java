@@ -251,7 +251,26 @@ public final class CoreChecks {
         check(f.shapes.get(2).piece.key.equals("1,0;0,1;1,1;2,1;"),"orange T orientation");
         check(Planner.best(f.board,f.shapes.stream().map(shape->shape.piece).collect(java.util.stream.Collectors.toList()),180)!=null,"recognized real hand proceeds to a legal plan");
     }
+    static void mergedOuterFaces() {
+        int w=700,h=1500;
+        for(boolean rectangle:new boolean[]{true,false}) {
+            int[] pixels=new int[w*h];java.util.Arrays.fill(pixels,0xff5b3e98);
+            int cols=rectangle?4:3,rows=rectangle?2:3;
+            for(int row=0;row<rows;row++)for(int col=0;col<cols;col++) {
+                int inset=!rectangle&&row==2?4:1;
+                for(int y=1000+row*32+inset;y<1000+(row+1)*32-inset;y++)
+                    for(int x=110+col*32+inset;x<110+(col+1)*32-inset;x++)pixels[y*w+x]=0xff14cc46;
+            }
+            if(rectangle)for(int y=1015;y<=1048;y++)pixels[y*w+221]=0xff14cc46;
+            else for(int x=114;x<202;x++)pixels[1080*w+x]=0xff14cc46;
+            for(int y=330;y<909;y++)for(int x=60;x<639;x++)pixels[y*w+x]=(x-60)%72<3||(y-330)%72<3||y>=906||x>=636?0xff0e172d:0xff233752;
+            Game.Frame frame=Recognizer.read(new Game.Image(w,h,pixels));
+            String expected=rectangle?"0,0;1,0;2,0;3,0;0,1;1,1;2,1;3,1;":"0,0;1,0;2,0;0,1;1,1;2,1;0,2;1,2;2,2;";
+            check(frame!=null&&frame.shapes.size()==1&&frame.shapes.get(0).piece.key.equals(expected),"merged outer faces must not disappear: "+expected);
+        }
+    }
     public static void main(String[] args) throws Exception {
+        mergedOuterFaces();
         purpleFrames();
         diagnostics();
         darkPalette();
