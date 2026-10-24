@@ -63,6 +63,22 @@ public final class CoreChecks {
         long board=0;
         for(Planner.Move m:result.moves) {Rules.Placement p=Rules.place(board,square,m.x,m.y);check(p!=null,"planner returns legal moves");board=p.board;}
         check(Planner.best(-1L,java.util.Arrays.asList(one),20)==null,"no illegal fallback");
+        // A very tight beam budget must not drop the third legal placement.
+        // The fallback is permitted to be less profitable, but not partial.
+        for(int budget:new int[]{5,10,25}) {
+            Planner.Result tight=Planner.best(0,java.util.Arrays.asList(square,square,square),budget,100,0);
+            check(tight!=null&&tight.moves.size()==3,"complete tray under "+budget+"ms search budget");
+            long simulated=0;
+            boolean[] visited=new boolean[3];
+            for(Planner.Move move:tight.moves) {
+                check(!visited[move.piece],"fallback never repeats the same tray item");
+                visited[move.piece]=true;
+                Rules.Placement placed=Rules.place(simulated,square,move.x,move.y);
+                check(placed!=null,"fallback placement remains legal");
+                simulated=placed.board;
+            }
+        }
+
     }
     static void alignment() throws Exception {
         Game.Image before=load("empty-gold.png");Game.Frame frame=Recognizer.read(before);
