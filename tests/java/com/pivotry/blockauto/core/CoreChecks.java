@@ -336,7 +336,7 @@ public final class CoreChecks {
     static void blueThemeGeometry() {
         int w=709,h=1536,p=79,left=40,top=360;
         int[] pix=new int[w*h];java.util.Arrays.fill(pix,0xff435d98);
-        for(int y=top;y<top+8*p;y++)for(int x=left;x<left+8*p;x++) {
+        for(int y=top;y<top+8*p+3;y++)for(int x=left;x<left+8*p;x++) {
             boolean boundary=(x-left)%p<3||(y-top)%p<3;
             pix[y*w+x]=boundary?0xff1c2648:0xff232b54;
         }
