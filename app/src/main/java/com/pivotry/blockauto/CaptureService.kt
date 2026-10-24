@@ -103,14 +103,14 @@ class CaptureService : Service() {
             reader = ImageReader.newInstance(physicalWidth,physicalHeight,PixelFormat.RGBA_8888,3)
             display = projection!!.createVirtualDisplay("BlockBlastVision",physicalWidth,physicalHeight,resources.configuration.densityDpi,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,reader!!.surface,null,main)
-            status("게임을 열고 ▶ 자동 시작을 누르세요")
+            status("게임을 열고 ▶ 추천 시작을 누르세요")
             worker.post(loop)
         } catch (e: Exception) { status("화면 공유 실패: " + e.javaClass.simpleName); stopSelf() }
         return START_NOT_STICKY
     }
     fun isRunning() = running
     fun toggle() {
-        if (running) { halt("자동 플레이 정지"); return }
+        if (running) { halt("추천 정지"); return }
         if (AutoService.live == null) { status("접근성 서비스를 켜주세요"); return }
         val epoch = generation.incrementAndGet()
         running = true; targetApp = null; verifiedMoves = 0
@@ -231,7 +231,7 @@ class CaptureService : Service() {
         Recognizer.Issue.BOARD_REFERENCE -> "판 인식됨 · 빈칸 기준 색상 확인 실패"
         Recognizer.Issue.BOARD_CELL -> "판 인식됨 · ${result.row+1}행 ${result.column+1}열 색상 불확실"
         Recognizer.Issue.BOARD_ANIMATION -> "판 인식됨 · 줄 삭제 효과가 끝나기를 기다리는 중"
-        Recognizer.Issue.TRAY -> "자동 배치 대기 · ${result.slot+1}번 블록을 아직 못 읽음 · " + when (result.reason) {
+        Recognizer.Issue.TRAY -> ""추천 대기 · ${result.slot+1}번 블록을 아직 못 읽음 · " + when (result.reason) {
             "OUTSIDE_CAPTURE" -> "공유 범위 부족"
             "UNSUPPORTED_COLOR", "OCCLUDED_OR_UNKNOWN_COLOR" -> "색상 또는 가림 확인"
             else -> "칸 경계·모양 확인"
@@ -333,7 +333,7 @@ class CaptureService : Service() {
     fun saveDiagnostics(uri: Uri,done: (String?)->Unit) {
         val trace = failureTrace
         if (trace == null) { main.post { done("저장할 위치 측정 실패 기록이 없습니다") }; return }
-        halt("진단 저장 · 자동 플레이 정지")
+        halt("진단 저장 · 추천 정지")
         worker.post {
             val error = try {
                 val output = contentResolver.openOutputStream(uri,"w") ?: throw java.io.IOException("출력 파일을 열 수 없습니다")
