@@ -104,7 +104,7 @@ class CaptureService : Service() {
             reader = ImageReader.newInstance(physicalWidth,physicalHeight,PixelFormat.RGBA_8888,3)
             display = projection!!.createVirtualDisplay("BlockBlastVision",physicalWidth,physicalHeight,resources.configuration.densityDpi,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,reader!!.surface,null,main)
-            status("게임을 열고 ▶ 추천 시작을 누르세요")
+            status("게임을 열고 ▶ 자동 시작을 누르세요")
             worker.post(loop)
         } catch (e: Exception) { status("화면 공유 실패: " + e.javaClass.simpleName); stopSelf() }
         return START_NOT_STICKY
@@ -118,7 +118,7 @@ class CaptureService : Service() {
         }
     }
     fun toggle() {
-        if (running) { halt("추천 정지"); return }
+        if (running) { halt("자동 플레이 정지"); return }
         if (AutoService.live == null) { status("접근성 서비스를 켜주세요"); return }
         val epoch = generation.incrementAndGet()
         running = true; targetApp = null; verifiedMoves = 0
@@ -190,7 +190,10 @@ class CaptureService : Service() {
             return
         }
         val epoch = generation.get()
-        
+        // During a held gesture the board is obscured by a moving piece.
+        // Measure the held object instead of re-running static board recognition.
+        if (phase == Phase.PICKED || phase == Phase.ALIGN) { align(image,now,epoch); return }
+
         val detection = Recognizer.analyze(image)
         val frame = detection.frame
         if (!valid(epoch)) return
@@ -239,11 +242,26 @@ class CaptureService : Service() {
         if (result == null) { AutoService.live?.clearGuide(); status("합법적인 배치를 찾지 못했습니다"); return }
         if (retrySignature.isNotEmpty() && frame.signature() != retrySignature) { retries = 0; retrySignature = "" }
         val move = result.moves.first()
+        val shape = frame.shapes[move.piece]
+        // Record the expected board before input. Only an observed match
+        // advances the estimated combo or permits another placement.
         scoreTracker.expect(frame,move.piece,move.x,move.y)
-        val piece = frame.shapes[move.piece].piece
-        val cells = piece.xs.indices.map { i -> Pair(move.x + piece.xs[i],move.y + piece.ys[i]) }
-        AutoService.live?.showGuide(frame.left,frame.top,frame.cell,cells,frame.width,frame.height)
-        status("고득점 추천 " + (frame.shapes[move.piece].slot+1) + "번: " + (move.x+1) + "열 " + (move.y+1) + "행 · 추적 콤보 " + scoreTracker.combo())
+        before = frame; beforeImage = image; probeImage = null
+        probeDX = 0f; probeDY = 0f; selected = shape
+        verifier = MoveVerifier(frame,move.piece,move.x,move.y)
+        targetX = frame.left+move.x*frame.cell
+        targetY = frame.top+move.y*frame.cell
+        targetApp = app; corrections = 0; observed = null
+        // Never let guidance outlines become part of the captured game state.
+        AutoService.live?.clearGuide(true)
+        fingerX = frame.width*.5f
+        fingerY = min(frame.height-frame.cell*.7f,
+            frame.top+8*frame.cell+shape.piece.h*frame.cell*.5f+2*frame.cell)
+        status("자동 배치 · 블록 " + (shape.slot+1) + "번 잡기 · 콤보 " + scoreTracker.combo())
+        gesture(epoch,Phase.PICKED) { service,done ->
+            service.beginDrag(shape.pickX*scaleX(frame),shape.pickY*scaleY(frame),
+                fingerX*scaleX(frame),fingerY*scaleY(frame),app,done)
+        }
     }
     private fun recognitionMessage(result: Recognizer.Detection): String = when (result.issue) {
         Recognizer.Issue.FORMAT -> "화면 크기 불일치 · 전체 세로 화면을 공유하세요"
@@ -252,7 +270,7 @@ class CaptureService : Service() {
         Recognizer.Issue.BOARD_REFERENCE -> "판 인식됨 · 빈칸 기준 색상 확인 실패"
         Recognizer.Issue.BOARD_CELL -> "판 인식됨 · ${result.row+1}행 ${result.column+1}열 색상 불확실"
         Recognizer.Issue.BOARD_ANIMATION -> "판 인식됨 · 줄 삭제 효과가 끝나기를 기다리는 중"
-        Recognizer.Issue.TRAY -> "추천 대기 · ${result.slot+1}번 블록을 아직 못 읽음 · " + when (result.reason) {
+        Recognizer.Issue.TRAY -> "자동 배치 대기 · ${result.slot+1}번 블록을 아직 못 읽음 · " + when (result.reason) {
             "OUTSIDE_CAPTURE" -> "공유 범위 부족"
             "UNSUPPORTED_COLOR", "OCCLUDED_OR_UNKNOWN_COLOR" -> "색상 또는 가림 확인"
             else -> "칸 경계·모양 확인"
@@ -354,7 +372,7 @@ class CaptureService : Service() {
     fun saveDiagnostics(uri: Uri,done: (String?)->Unit) {
         val trace = failureTrace
         if (trace == null) { main.post { done("저장할 위치 측정 실패 기록이 없습니다") }; return }
-        halt("진단 저장 · 추천 정지")
+        halt("진단 저장 · 자동 플레이 정지")
         worker.post {
             val error = try {
                 val output = contentResolver.openOutputStream(uri,"w") ?: throw java.io.IOException("출력 파일을 열 수 없습니다")
