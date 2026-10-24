@@ -11,6 +11,7 @@ import org.junit.runner.RunWith
 import org.junit.runners.MethodSorters
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import com.pivotry.blockauto.core.*
 
 @RunWith(AndroidJUnit4::class)
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
@@ -75,5 +76,50 @@ class AutoplayDeviceTest {
         instrumentation.runOnMainSync { CaptureService.active!!.halt("테스트 정지") }
         Assert.assertTrue(TouchFixtureActivity.live!!.placed>=6)
         Assert.assertEquals("no dropped/cancelled block in fixture",0,TouchFixtureActivity.live!!.cancelled)
+    }
+    private fun screenshot(): Game.Image {
+        val bitmap=ui.takeScreenshot()!!
+        val pixels=IntArray(bitmap.width*bitmap.height)
+        bitmap.getPixels(pixels,0,bitmap.width,0,0,bitmap.width,bitmap.height)
+        val result=Game.Image(bitmap.width,bitmap.height,pixels);bitmap.recycle();return result
+    }
+    private fun gesture(action: ((Boolean)->Unit)->Unit) {
+        val done=CountDownLatch(1);var ok=false
+        instrumentation.runOnMainSync { action { ok=it;done.countDown() } }
+        Assert.assertTrue(done.await(8,TimeUnit.SECONDS));Assert.assertTrue(ok)
+    }
+    private fun alignAtBoard(): Pair<Float,Float> {
+        instrumentation.startActivitySync(Intent(context,TouchFixtureActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        Thread.sleep(600)
+        val before=screenshot();val frame=Recognizer.read(before)!!;val shape=frame.shapes[0]
+        val fx=frame.width*.5f;val fy=frame.height*.88f
+        gesture { done -> AutoService.live!!.beginDrag(shape.pickX,shape.pickY,fx,fy,context.packageName,done) }
+        Thread.sleep(120)
+        val origin=DragAlignment.locate(screenshot(),before,frame,shape,fx,fy)
+        Assert.assertNotNull("held image measured through real Android rendering",origin)
+        val tx=fx+frame.left-origin!!.x;val ty=fy+frame.top-origin.y
+        gesture { done -> AutoService.live!!.moveHeld(tx,ty,true,400,done) }
+        return tx to ty
+    }
+    @Test fun c_stopDuringTerminatingStrokeDoesNotPlace() {
+        val target=alignAtBoard();val fixture=TouchFixtureActivity.live!!
+        instrumentation.runOnMainSync {
+            AutoService.live!!.moveHeld(target.first,target.second,false,600) { }
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ AutoService.live!!.abortHold() },80)
+        }
+        await("stop during final release") { !fixture.held }
+        Assert.assertEquals("stop must cancel pending UP over board",0,fixture.placed)
+    }
+    @Test fun d_appSwitchDuringReleaseDoesNotPlaceOrTouchNewApp() {
+        val target=alignAtBoard();val fixture=TouchFixtureActivity.live!!
+        instrumentation.runOnMainSync { AutoService.live!!.moveHeld(target.first,target.second,false,600) { } }
+        Thread.sleep(80)
+        ui.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME)
+        instrumentation.runOnMainSync { AutoService.live!!.abortHold() }
+        await("window switch cancels pointer") { !fixture.held }
+        Assert.assertEquals(0,fixture.placed)
+        var accepted=true
+        instrumentation.runOnMainSync { AutoService.live!!.beginDrag(100f,100f,200f,200f,context.packageName) { accepted=it } }
+        Assert.assertFalse("foreground lock blocks new-game touches on launcher",accepted)
     }
 }

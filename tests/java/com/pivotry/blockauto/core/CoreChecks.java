@@ -117,6 +117,24 @@ public final class CoreChecks {
         try {PixelReader.read(java.nio.ByteBuffer.allocate(4),2,2,12,4,720);}catch(IllegalArgumentException expected){rejected=true;}
         check(rejected,"truncated actual pixel data rejected before reading");
     }
+    static void ambiguousFrames() throws Exception {
+        Game.Image original=load("empty-gold.png");
+        for(int color:new int[]{0xff644b23,0xff382315}) {
+            int[] pixels=original.pixels.clone();
+            for(int y=367;y<435;y++)for(int x=46;x<114;x++)pixels[y*original.width+x]=color;
+            Game.Frame f=Recognizer.read(new Game.Image(original.width,original.height,pixels));
+            check(f==null||(f.board&1L)!=0,"near-background or darker occupied tile never read as empty "+Integer.toHexString(color));
+        }
+        int[] pixels=original.pixels.clone();
+        for(int y=1140;y<1210;y++)for(int x=319;x<391;x++) {
+            int c=pixels[y*original.width+x];
+            if(Recognizer.isTile(c)&&((c>>16)&255)>210)pixels[y*original.width+x]=0xffd6d6d6;
+        }
+        check(Recognizer.read(new Game.Image(original.width,original.height,pixels))==null,"unknown occupied pocket is uncertain, not absent");
+        pixels=original.pixels.clone();
+        for(int y=1140;y<1210;y++)for(int x=355;x<370;x++)pixels[y*original.width+x]=0xffababab;
+        check(Recognizer.read(new Game.Image(original.width,original.height,pixels))==null,"occluded piece invalidates hand instead of becoming a partial shape");
+    }
     static void recognition() throws Exception {
         Game.Frame f = Recognizer.read(load("empty-gold.png"));
         check(f != null, "real screenshot: must detect grid");
@@ -143,6 +161,7 @@ public final class CoreChecks {
         variants();
         simulations();
         pixelBuffers();
+        ambiguousFrames();
         System.out.println("PASS "+checks+" core checks");
     }
 }

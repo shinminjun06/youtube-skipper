@@ -26,7 +26,6 @@ class TouchFixtureActivity : Activity() {
     private lateinit var game: View
     override fun onCreate(state: Bundle?) {
         super.onCreate(state); live = this
-        window.insetsController?.hide(WindowInsets.Type.systemBars())
         window.setDecorFitsSystemWindows(false)
         game = object : View(this) {
             val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -93,6 +92,7 @@ class TouchFixtureActivity : Activity() {
             }
         }
         setContentView(game)
+        window.decorView.windowInsetsController?.hide(WindowInsets.Type.systemBars())
     }
     override fun onDestroy() { if(live===this)live=null;super.onDestroy() }
 }
