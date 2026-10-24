@@ -73,8 +73,8 @@ class AutoService : AccessibilityService() {
                 val g = guide ?: return
                 val origin = IntArray(2)
                 getLocationOnScreen(origin)
-                val sx = resources.displayMetrics.widthPixels.toFloat()/g.width
-                val sy = resources.displayMetrics.heightPixels.toFloat()/g.height
+                val sx = wm.maximumWindowMetrics.bounds.width().toFloat()/g.width
+                val sy = wm.maximumWindowMetrics.bounds.height().toFloat()/g.height
                 paint.style = Paint.Style.FILL
                 paint.color = 0x8800FF99.toInt()
                 for ((x,y) in g.cells) {
