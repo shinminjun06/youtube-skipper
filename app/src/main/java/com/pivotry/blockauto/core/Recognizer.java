@@ -29,7 +29,7 @@ public final class Recognizer {
     }
     private static boolean faceCandidate(int c,int bg) {return isTile(c)||paleTile(c,bg);}
     private static boolean sameMaterial(int c,int material) {
-        return (hueDistance(c,material)<.3f || (r(material)>185 && g(material)>175 && b(material)>155 && r(material)-b(material)>13 && distance(c,material)<75))&&distance(c,material)<125&&hi(c)>hi(material)*.65f;
+        return (hueDistance(c,material)<.3f || (r(material)>185 && g(material)>175 && b(material)>155 && r(material)-b(material)>13 && distance(c,material)<75))&&distance(c,material)<90&&hi(c)>hi(material)*.72f;
     }
     private static float line(Game.Image im,float x,float y,boolean vertical) {
         float v=255;
