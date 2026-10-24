@@ -196,6 +196,7 @@ class CaptureService : Service() {
         before = frame; beforeImage = image; selected = shape
         verifier = MoveVerifier(frame,move.piece,move.x,move.y)
         targetX = frame.left+move.x*frame.cell; targetY = frame.top+move.y*frame.cell
+        android.util.Log.i("BlockBlastAuto","plan board="+java.lang.Long.toHexString(frame.board)+" slot="+shape.slot+" target="+targetX+","+targetY+" cell="+frame.cell)
         targetApp = app; corrections = 0; observed = null
         fingerX = frame.width*.5f
         fingerY = min(frame.height-frame.cell*.7f,frame.top+8*frame.cell+shape.piece.h*frame.cell*.5f+2*frame.cell)
@@ -207,7 +208,8 @@ class CaptureService : Service() {
     private fun align(image: Game.Image,now: Long,epoch: Int) {
         val frame = before ?: return
         val shape = selected ?: return
-        val found = DragAlignment.locate(image,beforeImage!!,frame,shape,fingerX,fingerY)
+        val found = if (phase == Phase.PICKED) DragAlignment.locate(image,beforeImage!!,frame,shape,fingerX,fingerY)
+            else DragAlignment.locateNear(image,beforeImage!!,frame,shape,targetX,targetY)
         if (!valid(epoch)) return
         if (found == null) {
             observed = null
@@ -220,6 +222,7 @@ class CaptureService : Service() {
         }
         if (now-observedAt < 180) return
         val dx = targetX-found.x; val dy = targetY-found.y
+        android.util.Log.i("BlockBlastAuto","align "+phase+" origin="+found.x+","+found.y+" delta="+dx+","+dy)
         if (phase == Phase.ALIGN && abs(dx)<frame.cell*.13 && abs(dy)<frame.cell*.13) {
             status("정렬 확인 · 블록 놓기")
             gesture(epoch,Phase.VERIFY) { service,done -> service.moveHeld(fingerX*scaleX(frame),fingerY*scaleY(frame),false,150,done) }

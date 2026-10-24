@@ -25,10 +25,9 @@ class AutoService : AccessibilityService() {
     private var stroke: GestureDescription.StrokeDescription? = null
     private var fingerX = 0f
     private var fingerY = 0f
-    private var sourceX = 0f
-    private var sourceY = 0f
     private var inFlight = false
-    private var abortRequested = false
+    private var cancelling = false
+    private var cancelPending: (() -> Unit)? = null
     private var session = 0
     private val watchdog = Runnable { abortHold(); CaptureService.active?.halt("드래그 시간 초과") }
 
@@ -51,6 +50,7 @@ class AutoService : AccessibilityService() {
         val status = TextView(this).apply {
             text = "화면 공유 대기"; setTextColor(-1); textSize = 11f
             maxWidth = (resources.displayMetrics.widthPixels*.44f).toInt(); maxLines = 3
+            isClickable = true // neutral owned touch target used only to cancel a gesture
         }
         layout.addView(button); layout.addView(status)
         val params = WindowManager.LayoutParams(
@@ -69,8 +69,8 @@ class AutoService : AccessibilityService() {
     fun beginDrag(sx: Float,sy: Float,tx: Float,ty: Float,expectedApp: String,done: (Boolean)->Unit) {
         check(Looper.myLooper() == Looper.getMainLooper())
         if (stroke != null || inFlight || foregroundPackage() != expectedApp) { done(false); return }
-        sourceX = sx; sourceY = sy; fingerX = sx; fingerY = sy
-        abortRequested = false; session++
+        fingerX = sx; fingerY = sy
+        session++
         main.removeCallbacks(watchdog); main.postDelayed(watchdog,9000)
         val pickup = GestureDescription.StrokeDescription(Path().apply { moveTo(sx,sy) },0,160,true)
         send(pickup,sx,sy) { ok ->
@@ -79,7 +79,7 @@ class AutoService : AccessibilityService() {
     }
     fun moveHeld(tx: Float,ty: Float,keep: Boolean,duration: Long = 420,done: (Boolean)->Unit) {
         val old = stroke
-        if (old == null || inFlight || abortRequested) { done(false); return }
+        if (old == null || inFlight || cancelling) { done(false); return }
         val path = Path().apply { moveTo(fingerX,fingerY); lineTo(tx,ty) }
         send(old.continueStroke(path,0,duration,keep),tx,ty,done)
     }
@@ -87,14 +87,14 @@ class AutoService : AccessibilityService() {
         inFlight = true
         val once = AtomicBoolean(false)
         val epoch = session
+        cancelPending = { if (once.compareAndSet(false,true)) done(false) }
         fun finish(ok: Boolean) {
             if (!once.compareAndSet(false,true) || epoch != session) return
-            inFlight = false
+            cancelPending = null; inFlight = false
             if (ok) { fingerX = tx; fingerY = ty; stroke = if (next.willContinue()) next else null }
             else stroke = null
             if (stroke == null) main.removeCallbacks(watchdog)
-            if (abortRequested && stroke != null) { returnToTray(); done(false) }
-            else done(ok && !abortRequested)
+            done(ok)
         }
         val gesture = GestureDescription.Builder().addStroke(next).build()
         try {
@@ -105,26 +105,42 @@ class AutoService : AccessibilityService() {
             if (!accepted) finish(false)
         } catch (_: Exception) { finish(false) }
     }
-    /** Stop during a gesture waits for its callback, then releases back at the source. */
+    /** A fresh (non-continuing) gesture cancels the previous pointer with CANCEL,
+     * including an in-flight terminating stroke. Its tap lands on our neutral
+     * overlay, never on the game or another app. Do not wait for a pending UP. */
     fun abortHold() {
-        abortRequested = true
-        if (!inFlight) returnToTray()
-    }
-    private fun returnToTray() {
-        val old = stroke ?: return
-        val path = Path().apply { moveTo(fingerX,fingerY); lineTo(sourceX,sourceY) }
-        abortRequested = false
-        send(old.continueStroke(path,0,220,false),sourceX,sourceY) { }
+        main.removeCallbacks(watchdog)
+        if (cancelling || (stroke == null && !inFlight)) return
+        val target = statusText ?: return
+        val location = IntArray(2); target.getLocationOnScreen(location)
+        val x = location[0] + target.width*.5f
+        val y = location[1] + target.height*.5f
+        val pending = cancelPending
+        session++; val epoch = session
+        stroke = null; cancelPending = null; inFlight = true; cancelling = true
+        pending?.invoke()
+        fun finished() { if (session == epoch) { inFlight = false; cancelling = false } }
+        try {
+            val cancel = GestureDescription.Builder().addStroke(
+                GestureDescription.StrokeDescription(Path().apply { moveTo(x,y) },0,1,false)
+            ).build()
+            val accepted = dispatchGesture(cancel,object : GestureResultCallback() {
+                override fun onCompleted(gestureDescription: GestureDescription?) { finished() }
+                override fun onCancelled(gestureDescription: GestureDescription?) { finished() }
+            },main)
+            if (!accepted) finished()
+        } catch (_: Exception) { finished() }
     }
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) CaptureService.active?.checkForeground()
     }
     override fun onInterrupt() { CaptureService.active?.halt("접근성 서비스 중단"); abortHold() }
     override fun onDestroy() {
+        abortHold()
         CaptureService.active?.halt("접근성 서비스 종료")
-        main.removeCallbacksAndMessages(null)
         if (live === this) live = null
-        floating?.let { runCatching { wm.removeView(it) } }; floating = null
+        val overlay = floating; floating = null
+        main.postDelayed({ overlay?.let { runCatching { wm.removeView(it) } }; main.removeCallbacksAndMessages(null) },200)
         super.onDestroy()
     }
 }

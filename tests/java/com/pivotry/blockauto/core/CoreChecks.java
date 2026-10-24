@@ -141,6 +141,25 @@ public final class CoreChecks {
         for(int y=1140;y<1210;y++)for(int x=355;x<370;x++)pixels[y*original.width+x]=0xffababab;
         check(Recognizer.read(new Game.Image(original.width,original.height,pixels))==null,"occluded piece invalidates hand instead of becoming a partial shape");
     }
+    static void tile(Game.Image im,float x,float y,float cell) {
+        for(int yy=(int)y+1;yy<y+cell-1;yy++)for(int xx=(int)x+1;xx<x+cell-1;xx++) {
+            int c=0xfffbdc4e;
+            if(yy<y+cell*.12)c=0xffffed87;
+            if(xx>x+cell*.86&&yy>y+cell*.12)c=0xffd7a527;
+            im.pixels[yy*im.width+xx]=c;
+        }
+    }
+    static void bridgeAlignment() throws Exception {
+        Game.Image original=load("empty-gold.png");Game.Frame frame=Recognizer.read(original);Game.Shape shape=frame.shapes.get(0);
+        Game.Image before=new Game.Image(original.width,original.height,original.pixels.clone());
+        for(int x:new int[]{0,1,2,6,7})tile(before,frame.left+x*frame.cell,frame.top,frame.cell);
+        Game.Image after=new Game.Image(original.width,original.height,before.pixels.clone());
+        for(int x:new int[]{3,4,5})tile(after,frame.left+x*frame.cell,frame.top,frame.cell);
+        float target=frame.left+3*frame.cell;
+        DragAlignment.Origin match=DragAlignment.locateNear(after,before,frame,shape,target,frame.top);
+        check(match!=null&&Math.abs(match.x-target)<frame.cell*.12&&Math.abs(match.y-frame.top)<frame.cell*.12,
+            "joining same-color old tiles must not shift held-piece origin by whole cells");
+    }
     static void recognition() throws Exception {
         Game.Frame f = Recognizer.read(load("empty-gold.png"));
         check(f != null, "real screenshot: must detect grid");
@@ -168,6 +187,7 @@ public final class CoreChecks {
         simulations();
         pixelBuffers();
         ambiguousFrames();
+        bridgeAlignment();
         System.out.println("PASS "+checks+" core checks");
     }
 }

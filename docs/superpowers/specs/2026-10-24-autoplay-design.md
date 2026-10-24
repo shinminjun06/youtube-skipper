@@ -23,7 +23,9 @@ Pickup starts inside an occupied tile, holds, then stages below the board with
 touch still down. Match the floating piece against the before image to measure
 its full-size origin; move by target-origin minus observed-origin. Inspect again
 before releasing. Never fall back to a guessed Y offset. Bound time, corrections
-and retries; cancel safely when stopped or foreground app changes.
+and retries; cancel safely when stopped or foreground app changes. Cancel with
+a fresh gesture on the service-owned neutral overlay, so a pending final UP
+is cancelled instead of being allowed to place on the board.
 
 Post-drop board must equal the bitboard prediction after simultaneous row/column
 clears, with the chosen tray piece consumed (or a fresh hand after the last piece).
