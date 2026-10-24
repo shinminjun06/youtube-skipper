@@ -239,7 +239,13 @@ class CaptureService : Service() {
         status("배치 계산 중 · 블록 " + frame.shapes.size + "개")
         val result = Planner.best(frame.board,frame.shapes.map { it.piece },220,scoreTracker.combo(),scoreTracker.misses())
         if (!valid(epoch)) return
-        if (result == null) { AutoService.live?.clearGuide(); status("합법적인 배치를 찾지 못했습니다"); return }
+        if (result == null || result.moves.size != frame.shapes.size) {
+            // A partial recommendation is not safe for unattended autoplay:
+            // the remaining visible piece(s) may already be impossible to fit.
+            AutoService.live?.clearGuide(true)
+            halt("손패 전체 배치 실패 · 게임 오버 방지를 위해 자동 조작 중단")
+            return
+        }
         if (retrySignature.isNotEmpty() && frame.signature() != retrySignature) { retries = 0; retrySignature = "" }
         val move = result.moves.first()
         val shape = frame.shapes[move.piece]
