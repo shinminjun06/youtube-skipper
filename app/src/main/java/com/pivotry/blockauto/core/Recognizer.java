@@ -104,33 +104,41 @@ public final class Recognizer {
         // Empty cells have the same interior material at center and all four
         // inset corners. An occupied dark center is NOT a background reference.
         // Two different flat dark materials are ambiguous: reject, never invert.
-        int baseline=0;boolean hasReference=false;
-        for(int y=0;y<8;y++)for(int x=0;x<8;x++) {
-            int c=im.at(l+(x+.5f)*p,t+(y+.5f)*p);
-            if(hi(c)>195)continue;
-            boolean uniform=true;
-            for(float dy:new float[]{.20f,.80f})for(float dx:new float[]{.04f,.96f})
-                if(distance(c,im.at(l+(x+dx)*p,t+(y+dy)*p))>32)uniform=false;
-            if(!uniform)continue;
-            if(hasReference&&distance(c,baseline)>20)return failure(Issue.BOARD_REFERENCE,"AMBIGUOUS_EMPTY_REFERENCE",-1,-1,-1);
-            if(!hasReference){baseline=c;hasReference=true;}
+        // Identify the empty board color by consensus among ALL 64 cell
+        // interiors. The previous first-flat-cell reference failed on themed
+        // beveled blocks (e.g., the blue screenshot, row 1 column 7).
+        int[] centers=new int[64];
+        for(int y=0;y<8;y++)for(int x=0;x<8;x++)
+            centers[y*8+x]=im.at(l+(x+.5f)*p,t+(y+.5f)*p);
+        int baseIndex=-1,dominant=0;
+        for(int i=0;i<64;i++){
+            int matches=0;
+            for(int j=0;j<64;j++)if(distance(centers[i],centers[j])<=24)matches++;
+            if(matches>dominant){dominant=matches;baseIndex=i;}
         }
-        if(!hasReference)return failure(Issue.BOARD_REFERENCE,"NO_EMPTY_REFERENCE",-1,-1,-1);
-        for(int y=0;y<8;y++)for(int x=0;x<8;x++) {
-            int hit=0,unknown=0;
-            int center=im.at(l+(x+.5f)*p,t+(y+.5f)*p);
-            for(float dy:new float[]{-.18f,0,.18f})for(float dx:new float[]{-.18f,0,.18f}) {
+        // An unreliable reference is never enough to recommend a move.
+        if(dominant<6)return failure(Issue.BOARD_REFERENCE,"NO_DOMINANT_EMPTY_REFERENCE",-1,-1,-1);
+        int red=0,green=0,blue=0,n=0;
+        for(int c:centers)if(distance(c,centers[baseIndex])<=24){
+            red+=r(c);green+=g(c);blue+=b(c);n++;
+        }
+        int baseline=(red/n<<16)|(green/n<<8)|(blue/n);
+        for(int y=0;y<8;y++)for(int x=0;x<8;x++){
+            int center=centers[y*8+x],empty=0,filled=0,other=0;
+            for(float dy:new float[]{-.17f,0f,.17f})for(float dx:new float[]{-.17f,0f,.17f}){
                 int c=im.at(l+(x+.5f+dx)*p,t+(y+.5f+dy)*p);
-                if(distance(c,baseline)>20) {
-                    // A beveled tile may have dark, desaturated edge samples.
-                    // Trust a coherent 3x3 interior only when its center is
-                    // clearly different from the empty-board material.
-                    if(!isTile(c))unknown++;
-                    else hit++;
-                }
+                int delta=distance(c,baseline);
+                if(delta<=34)empty++;
+                else if(delta>48 && faceCandidate(c,baseline))filled++;
+                else other++;
             }
-            if(hit>=6 && isTile(center) && unknown<=3)board|=1L<<(y*8+x);
-            else if(hit>1 || unknown>1)return failure(Issue.BOARD_CELL,"PARTIAL_OR_UNKNOWN_CELL",-1,y,x);
+            if(empty>=8 && distance(center,baseline)<=34)continue;
+            // Dark/palette-similar surfaces are deliberately held for manual
+            // review instead of incorrectly marking them empty or occupied.
+            if(filled>=7 && distance(center,baseline)>48 && hi(center)>112 &&
+                (light(center)>light(baseline)+13 || hueDistance(center,baseline)>.34f)){
+                board|=1L<<(y*8+x);
+            } else return failure(Issue.BOARD_CELL,"UNRELIABLE_CELL_EVIDENCE",-1,y,x);
         }
         List<Game.Shape> shapes=new ArrayList<>();
         // A completed line is an animation, not a stable actionable game board.
