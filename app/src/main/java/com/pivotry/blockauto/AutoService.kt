@@ -51,7 +51,7 @@ class AutoService : AccessibilityService() {
             setPadding((8*dp).toInt(),(3*dp).toInt(),(8*dp).toInt(),(5*dp).toInt())
         }
         val button = Button(this).apply {
-            text = "▶ 추천 시작"
+            text = "▶ 자동 시작"
             setOnClickListener {
                 val capture = CaptureService.active
                 if (capture == null) setStatus("앱에서 화면 공유를 시작하세요") else capture.toggle()
@@ -160,7 +160,7 @@ class AutoService : AccessibilityService() {
         }
     }
     fun foregroundPackage(): String? = try { rootInActiveWindow?.packageName?.toString() } catch (_: Exception) { null }
-    fun setRunning(value: Boolean) { main.post { toggleButton?.text = if (value) "■ 추천 정지" else "▶ 추천 시작" } }
+    fun setRunning(value: Boolean) { main.post { toggleButton?.text = if (value) "■ 자동 정지" else "▶ 자동 시작" } }
     fun setStatus(value: String) { main.post { statusText?.text = value } }
 
     fun beginDrag(sx: Float,sy: Float,tx: Float,ty: Float,expectedApp: String?,done: (Boolean)->Unit) {
