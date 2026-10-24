@@ -110,6 +110,13 @@ class CaptureService : Service() {
         return START_NOT_STICKY
     }
     fun isRunning() = running
+    fun setDisplayedCombo(value: Int) {
+        worker.post {
+            scoreTracker.seedDisplayedCombo(value)
+            stableSignature = ""
+            status("콤보 기준 설정: " + value)
+        }
+    }
     fun toggle() {
         if (running) { halt("추천 정지"); return }
         if (AutoService.live == null) { status("접근성 서비스를 켜주세요"); return }
@@ -121,6 +128,7 @@ class CaptureService : Service() {
             phase = Phase.IDLE; inFlight = false; beforeImage = null; probeImage = null; before = null; verifier = null; failureTrace = null
             stableSignature = ""; observed = null; retries = 0; retrySignature = ""; noForegroundSince = 0L
             scoreTracker.reset()
+            scoreTracker.seedDisplayedCombo(getSharedPreferences("score",MODE_PRIVATE).getInt("display_combo",0))
             actionFloor = Long.MIN_VALUE; phaseAt = SystemClock.uptimeMillis()
             status("게임판 확인 중")
         }
