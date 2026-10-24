@@ -265,6 +265,20 @@ class CaptureService : Service() {
         if (!valid(epoch)) return
         if (found == null) {
             observed = null
+            // A single probe may land during a render transition. Reprobe
+            // once in the opposite direction without releasing the pointer.
+            if (phase == Phase.PICKED && corrections == 0 && now-phaseAt > 900) {
+                corrections = 1
+                probeImage = image
+                probeDX = -frame.cell*.65f
+                probeDY = 0f
+                fingerX += probeDX
+                status("잡기 재측정 · 블록 움직임 재확인")
+                gesture(epoch,Phase.PICKED) { service,done ->
+                    service.moveHeld(fingerX*scaleX(frame),fingerY*scaleY(frame),true,350,done)
+                }
+                return
+            }
             if (now-phaseAt > 2200) {
                 freezeFailure(image,"NO_HELD_MATCH")
                 val stage = if (phase == Phase.PICKED) "잡기" else "판 정렬"
