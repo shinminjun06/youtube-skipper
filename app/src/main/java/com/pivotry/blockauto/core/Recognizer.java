@@ -79,7 +79,7 @@ public final class Recognizer {
         int step=Math.max(2,im.width/350);
         float best=5,l=0,t=0,p=0;
         for(int y=(int)(im.height*.13f);y<im.height*.56f;y+=step) {
-            for(int threshold:new int[]{65,105,145,185}) {
+            for(int threshold:new int[]{30,45,65,85,105,125,145,165,185,210}) {
                 int start=-1;
                 for(int x=0;x<im.width;x++) {
                     if(light(im.at(x,y))<threshold) {if(start<0)start=x;}
@@ -101,13 +101,13 @@ public final class Recognizer {
             int c=im.at(l+(x+.5f)*p,t+(y+.5f)*p);
             if(light(c)<darkest){darkest=light(c);baseline=c;}
         }
-        if(hi(baseline)>145)return failure(Issue.BOARD_REFERENCE,"NO_EMPTY_REFERENCE",-1,-1,-1); // no trustworthy empty-cell reference
+        if(hi(baseline)>195)return failure(Issue.BOARD_REFERENCE,"NO_EMPTY_REFERENCE",-1,-1,-1); // no trustworthy empty-cell reference
         for(int y=0;y<8;y++)for(int x=0;x<8;x++) {
             int hit=0;
             for(float dy:new float[]{-.18f,0,.18f})for(float dx:new float[]{-.18f,0,.18f}) {
                 int c=im.at(l+(x+.5f+dx)*p,t+(y+.5f+dy)*p);
-                if(distance(c,baseline)>20) {
-                    if(!isTile(c))return failure(Issue.BOARD_CELL,"UNKNOWN_COLOR",-1,y,x); // unknown dark/monochrome tile is not empty
+                if(distance(c,baseline)>38) {
+                    if(!isTile(c) && distance(c,baseline)<90)return failure(Issue.BOARD_CELL,"UNKNOWN_COLOR",-1,y,x); // unknown dark/monochrome tile is not empty
                     hit++;
                 }
             }
