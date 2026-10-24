@@ -14,6 +14,11 @@ public final class ScoreTracker {
     private boolean armed;
 
     public int combo(){return combo;}
+    /** Classic default screen labels N after internal chain reaches N+1. */
+    public void seedDisplayedCombo(int visible) {
+        combo=visible>0?Math.min(100000,visible+1):0;
+        misses=0;armed=false;
+    }
     public int misses(){return misses;}
     public void reset(){combo=0;misses=0;signature=null;armed=false;}
 
