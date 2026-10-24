@@ -224,12 +224,10 @@ class CaptureService : Service() {
         targetX = frame.left+move.x*frame.cell; targetY = frame.top+move.y*frame.cell
         android.util.Log.i("BlockBlastAuto","plan board="+java.lang.Long.toHexString(frame.board)+" slot="+shape.slot+" target="+targetX+","+targetY+" cell="+frame.cell)
         targetApp = app; corrections = 0; observed = null
-        // Place the staging finger in a bounded, visible region near the board.
-        // Starting at the physical screen edge causes a large initial sweep,
-        // and on some games the lifted block can be misidentified as a preview.
-        fingerX = (shape.pickX + frame.width*.5f)*.5f
-        fingerY = min(frame.height-frame.cell*1.5f,
-            frame.top+8*frame.cell+shape.piece.h*frame.cell*.5f+frame.cell*.7f)
+        // Use the known full-screen staging position for reliable recognition
+        // of the moving held object, including high-lift and static-preview themes.
+        fingerX = frame.width*.5f
+        fingerY = min(frame.height-frame.cell*.7f,frame.top+8*frame.cell+shape.piece.h*frame.cell*.5f+2*frame.cell)
         status("블록 " + (shape.slot+1) + " 잡기 · 위치 측정")
         gesture(epoch,Phase.PICKED) { service,done ->
             service.beginDrag(shape.pickX*scaleX(frame),shape.pickY*scaleY(frame),fingerX*scaleX(frame),fingerY*scaleY(frame),app,done)
