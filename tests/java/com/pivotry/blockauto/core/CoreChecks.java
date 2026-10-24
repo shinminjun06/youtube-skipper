@@ -16,6 +16,38 @@ public final class CoreChecks {
         return new Game.Image(b.getWidth(), b.getHeight(),
             b.getRGB(0,0,b.getWidth(),b.getHeight(),null,0,b.getWidth()));
     }
+    static void highScorePlanning() {
+        check(Planner.linePoints(1,1)==10,"base clear uses 10*C");
+        check(Planner.linePoints(2,101)==2020,"double line uses 20*C");
+        check(Planner.linePoints(3,101)==6060,"triple line uses 60*C");
+        check(Planner.linePoints(6,101)==30300,"six lines use 300*C");
+        Game.Piece one=new Game.Piece(0,0);
+        Game.Piece square=new Game.Piece(0,0,1,0,0,1,1,1);
+        long cross=0x808080808080807fL;
+        Planner.Result reward=Planner.best(cross,java.util.Arrays.asList(one),160,101,0);
+        check(reward!=null&&reward.moves.size()==1&&reward.moves.get(0).x==7&&reward.moves.get(0).y==0,
+            "at combo 100 prioritize a legitimate cross clear");
+        Planner.Result all=Planner.best(0,java.util.Arrays.asList(square,square,square),180,101,0);
+        check(all!=null&&all.moves.size()==3,"still plan full visible tray at very high combo");
+        ScoreTracker tracker=new ScoreTracker();
+        tracker.seedDisplayedCombo(100);
+        check(tracker.combo()==101,"shown 100 maps to baseline internal 101");
+        Game.Shape shape=new Game.Shape(0,one,180,1100,0xffaaccff);
+        Game.Frame before=new Game.Frame(cross,java.util.Arrays.asList(shape),40,360,79,709,1536,1);
+        tracker.expect(before,0,7,0);
+        Game.Frame after=new Game.Frame(0,java.util.Arrays.asList(
+            new Game.Shape(0,one,180,1100,0xffaaccff),
+            new Game.Shape(1,square,320,1100,0xff00ffaa),
+            new Game.Shape(2,one,560,1100,0xffffaa00)),40,360,79,709,1536,1);
+        tracker.observe(after);
+        check(tracker.combo()==102&&tracker.misses()==0,
+            "confirmed cross clear preserves and increments a 100+ chain");
+        tracker.expect(after,0,0,0);
+        Game.Frame mismatch=new Game.Frame(4L,java.util.Arrays.asList(
+            after.shapes.get(1),after.shapes.get(2)),40,360,79,709,1536,1);
+        tracker.observe(mismatch);
+        check(tracker.combo()==0,"unexpected placement never invents a combo");
+    }
     static void planning() {
         Game.Piece one=new Game.Piece(0,0);
         long cross=0x808080808080807fL;
@@ -394,6 +426,7 @@ public final class CoreChecks {
         check(det.frame.shapes.get(2).piece.key.equals("1,0;0,1;"),"pale diagonal pair");
     }
     public static void main(String[] args) throws Exception {
+        highScorePlanning();
         brownThemeGeometry();
         blueThemeGeometry();
         diagnosticArchive();
