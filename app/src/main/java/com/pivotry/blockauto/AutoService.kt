@@ -6,6 +6,8 @@ import android.graphics.Path
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.view.View
+import android.view.MotionEvent
+import kotlin.math.abs
 import android.graphics.PixelFormat
 import android.os.Handler
 import android.os.Looper
@@ -25,6 +27,7 @@ class AutoService : AccessibilityService() {
     private var toggleButton: Button? = null
     private var guideView: View? = null
     private var guide: Guide? = null
+    private var guideClear: Runnable? = null
     private data class Guide(val left: Float,val top: Float,val cell: Float,val cells: List<Pair<Int,Int>>,val width: Int,val height: Int)
     private var statusText: TextView? = null
     private lateinit var wm: WindowManager
@@ -57,7 +60,7 @@ class AutoService : AccessibilityService() {
         val status = TextView(this).apply {
             text = "화면 공유 대기"; setTextColor(-1); textSize = 11f
             maxWidth = (resources.displayMetrics.widthPixels*.44f).toInt(); maxLines = 3
-            isClickable = true // neutral owned touch target used only to cancel a gesture
+            isClickable = true // drag handle and neutral target for cancelling a gesture
         }
         layout.addView(button); layout.addView(status)
         val params = WindowManager.LayoutParams(
@@ -66,6 +69,44 @@ class AutoService : AccessibilityService() {
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
         ).apply { gravity = Gravity.TOP or Gravity.END; y = (6*dp).toInt() }
+        // Drag the floating controls anywhere on the display. A short tap on
+        // the button still toggles recommendations; moving does not click it.
+        params.gravity = Gravity.TOP or Gravity.START
+        params.x = (resources.displayMetrics.widthPixels*.53f).toInt()
+        params.y = (6*dp).toInt()
+        fun attachDrag(target: View,clickOnRelease: Boolean) {
+            var downX=0f; var downY=0f; var startX=0; var startY=0
+            var moved=false
+            val slop=android.view.ViewConfiguration.get(this).scaledTouchSlop
+            target.setOnTouchListener { _,event ->
+                when(event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        downX=event.rawX; downY=event.rawY
+                        startX=params.x; startY=params.y; moved=false
+                        true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx=event.rawX-downX; val dy=event.rawY-downY
+                        if(abs(dx)>slop || abs(dy)>slop) moved=true
+                        if(moved) {
+                            val bounds=wm.maximumWindowMetrics.bounds
+                            params.x=(startX+dx.toInt()).coerceIn(0,(bounds.width()-layout.width).coerceAtLeast(0))
+                            params.y=(startY+dy.toInt()).coerceIn(0,(bounds.height()-layout.height).coerceAtLeast(0))
+                            wm.updateViewLayout(layout,params)
+                        }
+                        true
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        if(!moved && clickOnRelease) target.performClick()
+                        true
+                    }
+                    MotionEvent.ACTION_CANCEL -> true
+                    else -> false
+                }
+            }
+        }
+        attachDrag(button,true)
+        attachDrag(status,false)
         wm.addView(layout,params)
         val overlay = object : View(this) {
             private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -102,9 +143,22 @@ class AutoService : AccessibilityService() {
         floating = layout; toggleButton = button; statusText = status
     }
     fun showGuide(left: Float,top: Float,cell: Float,cells: List<Pair<Int,Int>>,width: Int,height: Int) {
-        main.post { guide = Guide(left,top,cell,cells,width,height); guideView?.invalidate() }
+        main.post {
+            guideClear?.let { main.removeCallbacks(it) }; guideClear=null
+            val next=Guide(left,top,cell,cells,width,height)
+            if(guide!=next) { guide=next; guideView?.invalidate() }
+        }
     }
-    fun clearGuide() { main.post { guide = null; guideView?.invalidate() } }
+    fun clearGuide(immediate: Boolean = false) {
+        main.post {
+            guideClear?.let { main.removeCallbacks(it) }
+            val clear=Runnable { guide=null; guideView?.invalidate(); guideClear=null }
+            if(immediate) clear.run() else {
+                guideClear=clear
+                main.postDelayed(clear,900)
+            }
+        }
+    }
     fun foregroundPackage(): String? = try { rootInActiveWindow?.packageName?.toString() } catch (_: Exception) { null }
     fun setRunning(value: Boolean) { main.post { toggleButton?.text = if (value) "■ 추천 정지" else "▶ 추천 시작" } }
     fun setStatus(value: String) { main.post { statusText?.text = value } }
