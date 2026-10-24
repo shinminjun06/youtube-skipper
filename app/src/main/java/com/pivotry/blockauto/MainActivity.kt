@@ -34,7 +34,7 @@ class MainActivity : Activity() {
         }
         fun button(text: String,action: ()->Unit) { root.addView(Button(this).apply { this.text = text; setOnClickListener { action() } }) }
         label("Block Blast Auto",27f)
-        label("0.5.2 · 떠 있는 블록 탐색과 실패 순간 진단",14f)
+        label("0.6.0 · 최적 배치 추천",14f)
         state = label("준비 중",16f).apply { setTextIsSelectable(true) }
         label("1. 접근성을 연결하세요. 블록을 잡고 이동하는 데 사용합니다.")
         button("접근성 설정 열기") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
@@ -47,8 +47,8 @@ class MainActivity : Activity() {
                 @Suppress("DEPRECATION") startActivityForResult(capture,captureRequest)
             }
         }
-        label("3. 블록 블라스트의 세로 게임 화면을 열고, 우측 위 ▶ 자동 시작을 누르세요.")
-        label("블록 잡기 → 떠 있는 위치 측정 → 판에 정렬 → 설치 확인 순서로 진행합니다. 잘못 읽거나 터치가 취소되면 자동으로 멈춥니다.",14f)
+        label("3. 블록 블라스트의 세로 게임 화면을 열고, 우측 위 ▶ 추천 시작을 누르세요.")
+        label("초록색 추천 칸을 보고 직접 블록을 놓으세요. 앱은 게임 화면을 터치하지 않습니다.",14f)
         label("정지 버튼은 현재 터치를 취소합니다. 잡고 있던 블록은 게임에서 원위치로 돌아옵니다. 화면을 회전했거나 공유가 종료되면 다시 공유하세요.",14f)
         button("자동 플레이 정지") { CaptureService.active?.halt("사용자가 정지했습니다") }
         button("위치 측정 실패 진단 파일 저장") {
