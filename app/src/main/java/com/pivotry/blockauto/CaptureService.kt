@@ -63,6 +63,7 @@ class CaptureService : Service() {
     private var retrySignature = ""
     private var retries = 0
     private var lastDetectionCode = ""
+    private val scoreTracker = ScoreTracker()
     private var noForegroundSince = 0L
     @Volatile private var failureTrace: FailureTrace? = null
 
@@ -119,6 +120,7 @@ class CaptureService : Service() {
             if (!valid(epoch)) return@post
             phase = Phase.IDLE; inFlight = false; beforeImage = null; probeImage = null; before = null; verifier = null; failureTrace = null
             stableSignature = ""; observed = null; retries = 0; retrySignature = ""; noForegroundSince = 0L
+            scoreTracker.reset()
             actionFloor = Long.MIN_VALUE; phaseAt = SystemClock.uptimeMillis()
             status("게임판 확인 중")
         }
@@ -196,6 +198,7 @@ class CaptureService : Service() {
             return
         }
         lastDetectionCode = ""
+        if (phase == Phase.IDLE) scoreTracker.observe(frame)
         if (phase == Phase.VERIFY) {
             if (stable(frame.signature(),now) && verifier!!.matches(frame)) {
                 verifiedMoves++; status("설치 확인 · " + verifiedMoves + "수")
@@ -223,15 +226,16 @@ class CaptureService : Service() {
         } else noForegroundSince = 0L
         if (targetApp != null && app != null && targetApp != app) { halt("앱 전환 감지"); return }
         status("배치 계산 중 · 블록 " + frame.shapes.size + "개")
-        val result = Planner.best(frame.board,frame.shapes.map { it.piece },180)
+        val result = Planner.best(frame.board,frame.shapes.map { it.piece },220,scoreTracker.combo(),scoreTracker.misses())
         if (!valid(epoch)) return
         if (result == null) { AutoService.live?.clearGuide(); status("합법적인 배치를 찾지 못했습니다"); return }
         if (retrySignature.isNotEmpty() && frame.signature() != retrySignature) { retries = 0; retrySignature = "" }
         val move = result.moves.first()
+        scoreTracker.expect(frame,move.piece,move.x,move.y)
         val piece = frame.shapes[move.piece].piece
         val cells = piece.xs.indices.map { i -> Pair(move.x + piece.xs[i],move.y + piece.ys[i]) }
         AutoService.live?.showGuide(frame.left,frame.top,frame.cell,cells,frame.width,frame.height)
-        status("추천 " + (frame.shapes[move.piece].slot+1) + "번 블록: " + (move.x+1) + "열 " + (move.y+1) + "행")
+        status("고득점 추천 " + (frame.shapes[move.piece].slot+1) + "번: " + (move.x+1) + "열 " + (move.y+1) + "행 · 추적 콤보 " + scoreTracker.combo())
     }
     private fun recognitionMessage(result: Recognizer.Detection): String = when (result.issue) {
         Recognizer.Issue.FORMAT -> "화면 크기 불일치 · 전체 세로 화면을 공유하세요"
