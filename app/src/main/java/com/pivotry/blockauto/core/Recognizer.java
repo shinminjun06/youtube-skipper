@@ -141,6 +141,8 @@ public final class Recognizer {
                 if(distance(center,baseline)>32)
                     return failure(Issue.BOARD_CELL,"AMBIGUOUS_CELL",-1,y,x);
             } else if(tileVotes>=6 && distance(center,baseline)>=42) {
+                if(hi(center)<112 && light(center)<light(baseline)+24)
+                    return failure(Issue.BOARD_CELL,"LOW_CONTRAST_DARK_TILE",-1,y,x);
                 board|=1L<<idx;
             } else {
                 return failure(Issue.BOARD_CELL,"MIXED_CELL_MATERIAL",-1,y,x);
