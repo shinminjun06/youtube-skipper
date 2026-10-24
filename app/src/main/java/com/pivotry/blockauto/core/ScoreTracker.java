@@ -10,6 +10,16 @@ public final class ScoreTracker {
 
     public int combo(){return combo;}
     public int misses(){return misses;}
+    /** The floating COMBO caption is stronger evidence than an inferred chain.
+     * Apply only after the caption explicitly includes a parsed number.
+     * Disarm any pending move to avoid counting that same clear twice.
+     */
+    public void observeDisplayedCombo(int visible) {
+        if(visible<1 || visible>99999) return;
+        combo=visible+1;
+        misses=0;
+        before=null;
+    }
     /** In the examined Android Classic baseline, a displayed N means chain N+1. */
     public void seedDisplayedCombo(int visible) {
         combo=visible>0?Math.min(100000,visible+1):0;
