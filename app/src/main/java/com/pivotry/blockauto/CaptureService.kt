@@ -224,8 +224,12 @@ class CaptureService : Service() {
         targetX = frame.left+move.x*frame.cell; targetY = frame.top+move.y*frame.cell
         android.util.Log.i("BlockBlastAuto","plan board="+java.lang.Long.toHexString(frame.board)+" slot="+shape.slot+" target="+targetX+","+targetY+" cell="+frame.cell)
         targetApp = app; corrections = 0; observed = null
-        fingerX = frame.width*.5f
-        fingerY = min(frame.height-frame.cell*.7f,frame.top+8*frame.cell+shape.piece.h*frame.cell*.5f+2*frame.cell)
+        // Place the staging finger in a bounded, visible region near the board.
+        // Starting at the physical screen edge causes a large initial sweep,
+        // and on some games the lifted block can be misidentified as a preview.
+        fingerX = (shape.pickX + frame.width*.5f)*.5f
+        fingerY = min(frame.height-frame.cell*1.5f,
+            frame.top+8*frame.cell+shape.piece.h*frame.cell*.5f+frame.cell*.7f)
         status("블록 " + (shape.slot+1) + " 잡기 · 위치 측정")
         gesture(epoch,Phase.PICKED) { service,done ->
             service.beginDrag(shape.pickX*scaleX(frame),shape.pickY*scaleY(frame),fingerX*scaleX(frame),fingerY*scaleY(frame),app,done)
@@ -277,11 +281,33 @@ class CaptureService : Service() {
         if (now-observedAt < 180) return
         val dx = targetX-found.x; val dy = targetY-found.y
         android.util.Log.i("BlockBlastAuto","align "+phase+" origin="+found.x+","+found.y+" delta="+dx+","+dy)
+        // Never let a weak visual match trigger ACTION_UP. The held object must
+        // lie fully within the intended legal board rectangle.
+        val targetWithinBoard = targetX >= frame.left-frame.cell*.08f &&
+            targetY >= frame.top-frame.cell*.08f &&
+            targetX + shape.piece.w*frame.cell <= frame.left+8*frame.cell+frame.cell*.08f &&
+            targetY + shape.piece.h*frame.cell <= frame.top+8*frame.cell+frame.cell*.08f
+        if (!targetWithinBoard) {
+            freezeFailure(image,"INVALID_TARGET")
+            halt("목표 위치 오류 · 드래그 취소")
+            return
+        }
         if (phase == Phase.ALIGN && abs(dx)<frame.cell*.13 && abs(dy)<frame.cell*.13) {
             status("정렬 확인 · 블록 놓기")
             gesture(epoch,Phase.VERIFY) { service,done -> service.moveHeld(fingerX*scaleX(frame),fingerY*scaleY(frame),false,150,done) }
         } else {
-            if (corrections++ >= 3) { halt("위치 보정 실패 · 정지"); return }
+            if (corrections++ >= 3) {
+                freezeFailure(image,"CORRECTION_LIMIT")
+                halt("위치 보정 실패 · 진단 저장 후 정지")
+                return
+            }
+            // An unexpectedly large correction indicates tracking the wrong
+            // object or a game-specific drag offset that is not calibrated.
+            if (abs(dx)>frame.cell*3f || abs(dy)>frame.cell*4f) {
+                freezeFailure(image,"IMPLAUSIBLE_CORRECTION")
+                halt("블록 추적 좌표 불일치 · 안전 정지")
+                return
+            }
             fingerX += dx; fingerY += dy
             if (fingerX<2 || fingerX>frame.width-2 || fingerY<2 || fingerY>frame.height-2) { halt("터치 범위를 벗어나는 배치 · 정지"); return }
             status("블록 위치 보정 " + corrections)
