@@ -50,6 +50,8 @@ class CaptureService : Service() {
     private var phase = Phase.IDLE
     private var inFlight = false
     private var cached: Game.Image? = null
+    /** Avoid rescanning identical buffers; never reuse across NEW captures. */
+    private val recognitionCache = FrameRecognitionCache()
     // Worker-only cache: ONLY grid geometry, not occupancy or tray contents.
     private var geometryHint: Game.Frame? = null
     private var timestamp = Long.MIN_VALUE
@@ -163,6 +165,7 @@ class CaptureService : Service() {
             phase = Phase.IDLE; inFlight = false; beforeImage = null; probeImage = null; before = null; verifier = null; failureTrace = null
             stableSignature = ""; lastRecommendedSignature=""; observed = null; retries = 0; retrySignature = ""; noForegroundSince = 0L
             geometryHint=null
+            recognitionCache.reset()
             scoreTracker.reset()
             dragCalibration.reset()
             dragResponse.reset()
@@ -246,7 +249,16 @@ class CaptureService : Service() {
         // Measure the held object instead of re-running static board recognition.
         if (phase == Phase.PICKED || phase == Phase.ALIGN) { align(image,now,epoch); return }
 
-        val detection = Recognizer.analyze(image,geometryHint)
+        // Static virtual displays may return no new ImageReader frame. In
+        // automatic mode the guide overlay is hidden; if image===raw, cached
+        // recognition is pixel-identical. Preserve elapsed-time stability
+        // checks but avoid re-running grid and tray detection on those pixels.
+        // A NEW buffer, even with identical colors, is ALWAYS analyzed again.
+        val detection = recognitionCache.reuse(raw,automatic,image === raw,img != null)
+            ?: Recognizer.analyze(image,geometryHint).also { found ->
+                if(automatic && image === raw) recognitionCache.remember(raw,found)
+                else recognitionCache.reset()
+            }
         val frame = detection.frame
         if(frame!=null) geometryHint=frame
         else if(detection.issue==Recognizer.Issue.GRID ||

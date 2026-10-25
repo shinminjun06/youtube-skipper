@@ -172,6 +172,61 @@ public final class CoreChecks {
         check(worst<1200,"bounded planning does not run unbounded exhaustive search");
         System.out.println("Simulation: "+moves+" legal placements, "+clears+" lines, worst planner "+worst+"ms (50ms budget)");
     }
+    static void frameReuseSafetyRegression() throws Exception {
+        Game.Image image=load("empty-gold.png");
+        Recognizer.Detection first=Recognizer.analyze(image);
+        check(first.frame!=null,"frame reuse fixture must be a valid board");
+        FrameRecognitionCache cache=new FrameRecognitionCache();
+        check(cache.reuse(image,true,true,false)==null,
+            "cannot reuse detection before first observation");
+        cache.remember(image,first);
+        check(cache.reuse(image,true,true,false)==first,
+            "identical untouched captured pixels may reuse prior detection");
+        check(cache.reuse(image,true,true,true)==null,
+            "a NEW ImageReader capture must be reanalyzed, even with same colors");
+        check(cache.reuse(image,false,true,false)==null,
+            "advisor mode never reuses potentially overlay-cleaned detection");
+        check(cache.reuse(image,true,false,false)==null,
+            "sanitized/modified overlay pixels are never mistaken for original");
+        Game.Image copy=new Game.Image(image.width,image.height,image.pixels.clone());
+        check(cache.reuse(copy,true,true,false)==null,
+            "identical-looking but separately captured buffer is NOT cached");
+        cache.reset();
+        check(cache.reuse(image,true,true,false)==null,
+            "session restart invalidates cached detection");
+    }
+    static void pixelSamplerGeometryRegression() {
+        for(int stride:new int[]{24,28})for(int maxWidth:new int[]{5,3,2,5}){
+            int width=5,height=3;
+            for(int variant=0;variant<2;variant++) {
+                byte[] bytes=new byte[(height-1)*stride+width*4];
+                for(int y=0;y<height;y++)for(int x=0;x<width;x++) {
+                    int offset=y*stride+x*4;
+                    bytes[offset]=(byte)(x*41+variant*31);
+                    bytes[offset+1]=(byte)(y*67+x);
+                    bytes[offset+2]=(byte)(x*19+y*23+variant*13);
+                    bytes[offset+3]=(byte)255;
+                }
+                Game.Image image=PixelReader.read(java.nio.ByteBuffer.wrap(bytes),
+                    width,height,stride,4,maxWidth);
+                int w=Math.min(width,maxWidth);
+                int h=Math.max(1,Math.round(height*w/(float)width));
+                check(image.width==w&&image.height==h,
+                    "sampler tracks rescaled output geometry");
+                for(int yy=0;yy<h;yy++)for(int xx=0;xx<w;xx++) {
+                    int sx=Math.min(width-1,(int)((xx+.5)*width/w));
+                    int sy=Math.min(height-1,(int)((yy+.5)*height/h));
+                    int red=(sx*41+variant*31)&255;
+                    int green=(sy*67+sx)&255;
+                    int blue=(sx*19+sy*23+variant*13)&255;
+                    int expected=0xff000000|(red<<16)|(green<<8)|blue;
+                    check(image.pixels[yy*w+xx]==expected,
+                        "cached resampler preserves RGBA colors, stride and rounding");
+                }
+            }
+        }
+    }
+
     static void pixelBuffers() {
         // Two rows of RGBA, one padding pixel per row; final padding is absent.
         java.nio.ByteBuffer rgba=java.nio.ByteBuffer.wrap(new byte[]{(byte)255,0,0,(byte)255,0,(byte)255,0,(byte)255,99,99,99,99,0,0,(byte)255,(byte)255,(byte)255,(byte)255,(byte)255,(byte)255});
@@ -1179,6 +1234,8 @@ public final class CoreChecks {
     }
 
     public static void main(String[] args) throws Exception {
+        pixelSamplerGeometryRegression();
+        frameReuseSafetyRegression();
         cachedGridRecognitionRegression();
         diagnostic9ExactShapeAndEdgeRegression();        successGatedSpeedRegression();
         measuredSpriteResponseRegression();
