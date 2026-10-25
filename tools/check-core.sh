@@ -117,3 +117,46 @@ if ! grep -Fq 'measuredSpriteResponseRegression();' tests/java/com/pivotry/block
   echo 'FAIL: uploaded 1.5x overshoot regression no longer tested' >&2
   exit 1
 fi
+
+# Speed-up cannot bypass physical press, visual identity, full board verification,
+# or auto-downgrade to known-good v1.4.2 timings after uncertainty.
+if ! grep -Fq 'pace.verified(corrections,motionGestureCount)' app/src/main/java/com/pivotry/blockauto/CaptureService.kt; then
+  echo 'FAIL: adaptive pace must require independent confirmed placement' >&2
+  exit 1
+fi
+if ! grep -Fq 'if (stable(frame.signature(),now) && verifier!!.matches(frame))' app/src/main/java/com/pivotry/blockauto/CaptureService.kt; then
+  echo 'FAIL: verified placement gate missing' >&2
+  exit 1
+fi
+if ! grep -Fq 'pace.uncertainty() // Uncertain initial motion' app/src/main/java/com/pivotry/blockauto/CaptureService.kt; then
+  echo 'FAIL: uncertain pickup must revert gesture speed' >&2
+  exit 1
+fi
+if ! grep -Fq 'pace.uncertainty()' app/src/main/java/com/pivotry/blockauto/CaptureService.kt; then
+  echo 'FAIL: speed downgrade path missing' >&2
+  exit 1
+fi
+if ! grep -Fq 'pace.postGestureReadMs()' app/src/main/java/com/pivotry/blockauto/CaptureService.kt; then
+  echo 'FAIL: frame pause not speed-dependent' >&2
+  exit 1
+fi
+if ! grep -Fq 'pace.firstTravelMs().toLong()' app/src/main/java/com/pivotry/blockauto/CaptureService.kt; then
+  echo 'FAIL: timed path not wired to AutoService' >&2
+  exit 1
+fi
+if ! grep -Fq 'pace.releaseMs().toLong()' app/src/main/java/com/pivotry/blockauto/CaptureService.kt; then
+  echo 'FAIL: release duration not speed-dependent' >&2
+  exit 1
+fi
+if ! grep -Fq 'private val pace = AdaptivePace()' app/src/main/java/com/pivotry/blockauto/CaptureService.kt; then
+  echo 'FAIL: verified-only speed controller missing' >&2
+  exit 1
+fi
+if ! grep -Fq 'val pickup = GestureDescription.StrokeDescription(Path().apply { moveTo(sx,sy) },0,160,true)' app/src/main/java/com/pivotry/blockauto/AutoService.kt; then
+  echo 'FAIL: original press-to-grab dwell modified' >&2
+  exit 1
+fi
+if ! grep -Fq 'successGatedSpeedRegression();' tests/java/com/pivotry/blockauto/core/CoreChecks.java; then
+  echo 'FAIL: speed calibration / fallback regression removed' >&2
+  exit 1
+fi
