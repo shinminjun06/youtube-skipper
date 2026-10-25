@@ -1648,6 +1648,46 @@ public final class CoreChecks {
         check(pace.tier()==AdaptivePace.Tier.BASE,"new session cannot inherit old fast mode");
     }
 
+    /** Diagnostic (19): the real red L has TWO unchanged same-color board
+     * centers at (column3,row4) and (column3,row6), plus 3 new centers. */
+    static void diagnostic19RedLTwoOldBoardRegression() {
+        final int w=720,h=1560,bg=0xff212852,red=0xffc53131;
+        final float left=44f,top=366f,cell=79.125f;
+        Game.Piece l=new Game.Piece(0,0,0,1,0,2,1,2,2,2);
+        Game.Shape shape=new Game.Shape(0,l,113.5f,1192.5f,red);
+        long occupied=(1L<<(4*8+3))|(1L<<(6*8+3));
+        Game.Frame frame=new Game.Frame(occupied,java.util.Arrays.asList(shape),
+            left,top,cell,w,h,1f);
+        int[] background=new int[w*h];java.util.Arrays.fill(background,bg);
+        paintCell(background,w,h,left,top,cell,3,4,red);
+        paintCell(background,w,h,left,top,cell,3,6,red);
+        paintCell(background,w,h,left,top,cell,4,6,0xff31b63a);
+        paintCell(background,w,h,left,top,cell,5,6,0xff4265de);
+        Game.Image before=new Game.Image(w,h,background);
+        Game.Image held=lifted(before,frame,shape,289f,663f);
+        float fx=286.66293f,fy=1038.5625f;
+        check(DragAlignment.locate(held,before,frame,shape,fx,fy)==null,
+            "diag19 ordinary new-center matching must still reject overlaps");
+        DragAlignment.Origin match=DragAlignment.locateOverOccupiedBoard(
+            held,before,frame,shape,fx,fy);
+        check(match!=null && Math.abs(match.x-289f)<cell*.23f &&
+            Math.abs(match.y-663f)<cell*.23f,
+            "diag19 real red L with 2 old board centers must be recoverable");
+        Game.Frame missingBit=new Game.Frame(1L<<(4*8+3),
+            frame.shapes,left,top,cell,w,h,1);
+        check(DragAlignment.locateOverOccupiedBoard(
+            held,before,missingBit,shape,fx,fy)==null,
+            "diag19 both original board bits must be verified, independently");
+        check(DragAlignment.locateOverOccupiedBoard(
+            before,before,frame,shape,fx,fy)==null,
+            "diag19 a stationary board must not pass the recovery");
+        int[] erased=held.pixels.clone();
+        paintCell(erased,w,h,left,top,cell,5,6,bg);
+        check(DragAlignment.locateOverOccupiedBoard(
+            new Game.Image(w,h,erased),before,frame,shape,fx,fy)==null,
+            "diag19 incomplete right tail is unsafe");
+    }
+
     /** Diagnostic 18: no grid-preview coordinate can poison direct calibration. */
     static void diagnostic18ProxyCalibrationRegression() {
         check(DragCalibration.mayRecordVerifiedTargetSample(true,false),
@@ -1746,6 +1786,7 @@ public final class CoreChecks {
     }
 
     public static void main(String[] args) throws Exception {
+        diagnostic19RedLTwoOldBoardRegression();
         diagnostic18ProxyCalibrationRegression();
         diagnostic18BlueDiagonalLineClearRegression();
         predictiveHeldRoiRegression();

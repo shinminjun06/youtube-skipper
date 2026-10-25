@@ -723,12 +723,23 @@ class CaptureService : Service() {
             lastCorrectionOrigin?.let { from ->
                 val actualX=found.x-from.x
                 val actualY=found.y-from.y
-                if(dragResponse.observe(lastCorrectionStepX,lastCorrectionStepY,
-                        actualX,actualY,frame.cell))
-                    android.util.Log.i("BlockBlastAuto",
-                        "measured correction gain="+dragResponse.gainX()+","+
-                        dragResponse.gainY()+" actual="+actualX+","+actualY)
+                // Never update motion gain from an occupied-board or
+                // snapped-preview proxy. Both endpoints must be strictly
+                // measured physical sprites and free of recovery evidence.
+                if(lastCorrectionTrusted && (targetMatch!=null ||
+                        regularHeld!=null) && !usedBoardOverlapRecovery &&
+                        !usedBevelZigzagRecovery && !usedComboClearPreview &&
+                        !usedLineGlowPreview && !usedDiagonalLineClearPreview &&
+                        stackedPreview==null) {
+                    if(dragResponse.observe(lastCorrectionStepX,lastCorrectionStepY,
+                            actualX,actualY,frame.cell))
+                        android.util.Log.i("BlockBlastAuto",
+                            "measured correction gain="+dragResponse.gainX()+","+
+                            dragResponse.gainY()+" actual="+actualX+","+actualY)
+                } else android.util.Log.i("BlockBlastAuto",
+                    "correction response skipped: recovery-only sprite origin")
                 lastCorrectionOrigin=null
+                lastCorrectionTrusted=false
             }
         }
         val dx = targetX-found.x; val dy = targetY-found.y
