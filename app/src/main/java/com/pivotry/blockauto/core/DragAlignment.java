@@ -5,6 +5,50 @@ public final class DragAlignment {
     private static final float[] SAMPLES={.22f,.5f,.78f};
     private static final int[][] DIRECTIONS={{-1,0},{1,0},{0,-1},{0,1}};
     public static final class Origin {public final float x,y,confidence;Origin(float x,float y,float c){this.x=x;this.y=y;confidence=c;}}
+
+    /**
+     * ROI-first continuation tracking: use a location predicted by a
+     * previously verified whole-shape observation plus a measured gesture.
+     * The supplied coordinates NEVER become a sighting on their own: every
+     * sample must pass the original strict full-piece/new-pixel score.
+     *
+     * This method is for HELD correction only. It must not authorize ACTION_UP;
+     * the caller independently requires a target-local match/preview before
+     * releasing, and falls back to full staged tracking if both ROI widths
+     * miss. False/uncertain ROI candidates are not learned as calibration.
+     */
+    public static Origin locatePredicted(Game.Image image,Game.Image before,
+            Game.Frame frame,Game.Shape piece,
+            float predictedX,float predictedY,float radiusCells) {
+        if(image==null||before==null||frame==null||piece==null||
+           image.width!=before.width||image.height!=before.height||
+           image.width!=frame.width||image.height!=frame.height||
+           !Float.isFinite(frame.cell)||frame.cell<=10f||
+           !Float.isFinite(predictedX)||!Float.isFinite(predictedY)||
+           !Float.isFinite(radiusCells)||radiusCells<.5f||
+           radiusCells>2.5f)return null;
+        float cell=frame.cell,radius=radiusCells*cell;
+        float maximumX=image.width-piece.piece.w*cell;
+        float maximumY=image.height-piece.piece.h*cell;
+        if(maximumX<0||maximumY<0||predictedX< -radius ||
+           predictedY< -radius ||predictedX>maximumX+radius ||
+           predictedY>maximumY+radius)return null;
+        float minX=Math.max(0,predictedX-radius);
+        float maxX=Math.min(maximumX,predictedX+radius);
+        float minY=Math.max(0,predictedY-radius);
+        float maxY=Math.min(maximumY,predictedY+radius);
+        if(minX>maxX||minY>maxY)return null;
+        // The original strict score requires correct colors/edges, all
+        // piece centers changed, >=90% coverage and new-material evidence.
+        // A wrong stale frame or unchanged board cannot pass this test.
+        Origin found=search(image,before,frame,piece,
+            minX,maxX,minY,maxY,.30f,true);
+        // Plateau refinement may move within a search window. Avoid
+        // returning an unrelated target farther than the requested ROI.
+        if(found==null||Math.abs(found.x-predictedX)>radius ||
+           Math.abs(found.y-predictedY)>radius)return null;
+        return found;
+    }
     /** The destination is legal and was empty before the move: require new pixels
      * throughout the held piece, so adjacent old tiles cannot masquerade as it. */
     public static Origin locateNear(Game.Image im,Game.Image before,Game.Frame frame,Game.Shape shape,float x,float y) {

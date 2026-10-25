@@ -1081,6 +1081,53 @@ public final class CoreChecks {
      * newly purple, but top-right overlaps an OLD purple BOARD square
      * at row=4,col=5. It is NOT a second moving block.
      */
+
+    static void predictiveHeldRoiRegression() {
+        // v1.4.13: ROI scans only a STRICTLY full, newly rendered sprite.
+        int w=720,h=1560,background=0xff29334b,purple=0xff9054db;
+        float cell=79.5f,left=43,top=368;
+        Game.Piece p=new Game.Piece(0,0,1,0,0,1,1,1);
+        Game.Shape shape=new Game.Shape(1,p,340,1185,purple);
+        Game.Frame frame=new Game.Frame(0,java.util.Arrays.asList(shape),
+            left,top,cell,w,h,1f);
+        int[] base=new int[w*h];java.util.Arrays.fill(base,background);
+        Game.Image before=new Game.Image(w,h,base);
+        float actualX=345f,actualY=650f;
+        Game.Image image=lifted(before,frame,shape,actualX,actualY);
+        float expectedX=actualX+cell*.26f,expectedY=actualY-cell*.17f;
+        DragAlignment.Origin tight=DragAlignment.locatePredicted(
+            image,before,frame,shape,expectedX,expectedY,.9f);
+        check(tight!=null && Math.abs(tight.x-actualX)<cell*.3f &&
+            Math.abs(tight.y-actualY)<cell*.3f,
+            "correct moving sprite found around predicted coordinates");
+        check(DragAlignment.locatePredicted(image,before,frame,shape,
+            actualX+cell*1.7f,actualY, .9f)==null,
+            "wrong motion estimate does not become a sighting");
+        DragAlignment.Origin widened=DragAlignment.locatePredicted(
+            image,before,frame,shape,actualX+cell*1.7f,actualY,2.3f);
+        check(widened!=null && Math.abs(widened.x-actualX)<cell*.3f,
+            "wider ROI recovers plausible commanded-motion offset");
+        check(DragAlignment.locatePredicted(image,before,frame,shape,
+            30f,150f,2.3f)==null,
+            "missed ROI cannot invent a held piece");
+        check(DragAlignment.locate(image,before,frame,shape,
+            460f,880f)!=null,
+            "wider established search remains available on ROI miss");
+        check(DragAlignment.locatePredicted(before,before,frame,shape,
+            expectedX,expectedY,.9f)==null,
+            "same stale pixels cannot be reported as fresh movement");
+        int[] partial=image.pixels.clone();
+        for(int y=650;y<650+(int)cell;y++)for(int x=345;x<345+(int)cell;x++)
+            partial[y*w+x]=background;
+        check(DragAlignment.locatePredicted(
+            new Game.Image(w,h,partial),before,frame,shape,
+            expectedX,expectedY,2.3f)==null,
+            "three quarters of piece is not strong enough to pass");
+        check(DragAlignment.locatePredicted(image,before,frame,shape,
+            Float.NaN,expectedY,.9f)==null,
+            "nonfinite predicted state is never used");
+    }
+
     static void diagnostic17PurpleShiftedBoardOverlap() {
         int w=720,h=1560,bg=0xff212d52,purple=0xff9259d6;
         float cell=79.5f,left=43,top=368;
@@ -1602,6 +1649,7 @@ public final class CoreChecks {
     }
 
     public static void main(String[] args) throws Exception {
+        predictiveHeldRoiRegression();
         diagnostic17PurpleShiftedBoardOverlap();
         diagnostic16OrangeDarkBevelRegression();
         diagnostic15BlueLineGlowRegression();

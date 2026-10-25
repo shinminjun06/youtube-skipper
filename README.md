@@ -1,4 +1,4 @@
-# Block Blast Advisor + Auto v1.4.12
+# Block Blast Advisor + Auto v1.4.13
 
 Android 11+ 전용 오프라인 Block Blast Classic 게임판 분석 앱입니다. **추천 모드**와 **자동 플레이 모드**를 같은 앱에서 선택할 수 있습니다.
 
@@ -10,12 +10,22 @@ Android 11+ 전용 오프라인 Block Blast Classic 게임판 분석 앱입니�
 
 ## 사용법
 
-1. [오토플레이 전용 빌드 페이지](https://github.com/shinminjun06/youtube-skipper/actions?query=branch%3Ablockblast-autoplay-build)에서 **Build BlockBlast Advisor + Auto APK**가 초록 체크로 완료된 실행을 열고 **BlockBlastAutoPlay-apk** ZIP을 다운로드합니다. ZIP을 풀고 **BlockBlastAutoPlay-v1.4.12.apk**를 설치하세요. 구버전과 혼동하지 마세요.
-2. 홈 화면에서 **Block Blast AutoPlay** 아이콘을 실행해 **v1.4.12**이라고 표시되는지 확인합니다. 기존 **Block Blast Advisor**(v1.2)는 다른 앱으로 남아 있습니다. 기존 Advisor의 접근성 서비스를 끄고 **Block Blast AutoPlay** 접근성을 연결한 다음 **전체 화면 공유 시작**을 승인합니다.
+1. [오토플레이 전용 빌드 페이지](https://github.com/shinminjun06/youtube-skipper/actions?query=branch%3Ablockblast-autoplay-build)에서 **Build BlockBlast Advisor + Auto APK**가 초록 체크로 완료된 실행을 열고 **BlockBlastAutoPlay-apk** ZIP을 다운로드합니다. ZIP을 풀고 **BlockBlastAutoPlay-v1.4.13.apk**를 설치하세요. 구버전과 혼동하지 마세요.
+2. 홈 화면에서 **Block Blast AutoPlay** 아이콘을 실행해 **v1.4.13**이라고 표시되는지 확인합니다. 기존 **Block Blast Advisor**(v1.2)는 다른 앱으로 남아 있습니다. 기존 Advisor의 접근성 서비스를 끄고 **Block Blast AutoPlay** 접근성을 연결한 다음 **전체 화면 공유 시작**을 승인합니다.
 3. 앱 첫 화면에서 **자동 플레이 모드 선택**을 누른 뒤 Block Blast Classic의 세로 화면을 엽니다. 자동 모드에서는 하단에 고정되는 플로팅 창에서도 **모드: 추천** 또는 **모드: 자동**을 전환할 수 있습니다.
 4. **▶ 시작**을 누릅니다. 추천에서는 초록색 칸을 보고 수동으로 놓습니다. 자동에서는 플로팅 창이 사라지고, 앱이 블록을 잡고 설치를 검증합니다. 조작창이 숨겨져 있는 것은 정상입니다.
 5. **자동 플레이 중에는** Android 알림 패널의 **종료** 버튼으로 즉시 중지하세요. 중지되면 플로팅 창이 다시 나타납니다. 추천 모드에서는 기존 ■ 중지 버튼을 이용할 수 있습니다.
 6. 추적 실패 시 앱의 **위치 측정 실패 진단 파일 저장**을 이용해 원인 분석용 ZIP을 저장할 수 있습니다.
+
+## v1.4.13 — 드래그 중 예측 ROI 추적과 단계적 재탐색
+
+- **실제 기존 동작 정리:** v1.4.12에서도 드래그 중 PICKED/ALIGN에서는 게임판·손패 전체의 `Recognizer.analyze()`를 건너뛰었습니다. 다만 ALIGN에서 별도 블록을 찾을 때 `DragAlignment.locate()`가 매번 손가락 주변의 큰 세로 탐색 영역을 검사하는 것은 여전히 비효율적이었습니다.
+- **이번 변경:** 마지막에 픽셀로 **전체 형태가 확인된 블록** 위치만 기억합니다. 이전 보정 제스처가 신뢰 가능한 경우, 블록 예상 위치를 `실제 관찰 좌표 + 손가락 명령 이동량 × 확인된 모터 반응 배율`로 계산합니다. 즉 움직임은 탐색 시작점일 뿐 실제 블록 위치를 단독으로 인증하지 않습니다.
+- **좁은 ROI부터:** 먼저 ±0.9칸 창에서 모든 픽셀 중심·형태·색상·이전 이미지와의 차이를 검사하고, 실패하면 ±2.3칸으로 확장합니다. 모두 실패하면 기존 광역 추적 및 (11~17) 진단 전용 안전 복구 경로를 그대로 사용합니다. 처음 집은 블록이나 추정 좌표가 신뢰되지 않으면 처음부터 기존 검사를 실행합니다.
+- **안전장치 불변:** ROI로 찾아낸 결과는 손에 든 블록의 **정렬 보정 전용**입니다. 블록 놓기는 별도로 목표 가까이에서 얻는 `targetMatch` + 정확한 `targetCellPreview` 또는 기존의 엄격한 특수 검증을 통과한 경우에만 가능합니다. 놓은 후에는 새 프레임에서 전체 보드/손패를 다시 인식하고 `MoveVerifier`로 확인합니다.
+- **측정 가능성:** 진단 ZIP에 `roiTightMatches`, `roiWideMatches`, `roiFullFallbacks`, `lastCorrectionTrusted`를 추가해 실제 기기에서 ROI 적중률과 재탐색 빈도를 비교할 수 있게 했습니다.
+- 이번 버전은 **전체 프레임 수신 및 전체 크기 RGBA 축소 복사**는 유지합니다. 변경된 것은 드래그 중의 픽셀 탐색 범위이며, 안드로이드 화면 캡처 자체가 부분 캡처가 되는 것은 아닙니다. 기기별 속도 절감은 아직 계측되지 않았습니다.
+- 회귀 검사: 올바른 이동 예측, ROI 확대 복구, 잘못된 좌표·NaN 거부, 픽셀 변동이 없는 캡처 거부, 조각 한 칸 누락 거부, 기존 광역 복구 유지. 실제 단말 연속 자동 플레이는 별도 확인 필요.
 
 ## v1.4.12 — 진단 (17): 같은 색상의 기존 게임판 블록과 겹친 보라색 4칸 추적
 

@@ -75,6 +75,13 @@ class CaptureService : Service() {
     private var fingerX = 0f
     private var fingerY = 0f
     private var observed: DragAlignment.Origin? = null
+    // Last FULL-SHAPE pixel-confirmed sprite origin; never a fallback proxy.
+    // Only this evidence can seed narrow prediction on a NEW capture.
+    private var trustedHeldOrigin: DragAlignment.Origin? = null
+    private var lastCorrectionTrusted = false
+    private var roiTightMatches=0
+    private var roiWideMatches=0
+    private var roiFullFallbacks=0
     private var observedAt = 0L
     private var corrections = 0
     private var retrySignature = ""
@@ -168,7 +175,10 @@ class CaptureService : Service() {
         worker.post {
             if (!valid(epoch)) return@post
             phase = Phase.IDLE; inFlight = false; beforeImage = null; probeImage = null; before = null; verifier = null; failureTrace = null
-            stableSignature = ""; lastRecommendedSignature=""; observed = null; retries = 0; retrySignature = ""; noForegroundSince = 0L
+            stableSignature = ""; lastRecommendedSignature=""; observed = null
+            trustedHeldOrigin=null; lastCorrectionTrusted=false
+            roiTightMatches=0; roiWideMatches=0; roiFullFallbacks=0
+            retries = 0; retrySignature = ""; noForegroundSince = 0L
             geometryHint=null
             recognitionCache.reset()
             scoreTracker.reset()
@@ -395,6 +405,8 @@ class CaptureService : Service() {
         targetX = frame.left+move.x*frame.cell
         targetY = frame.top+move.y*frame.cell
         targetApp = app; corrections = 0; observed = null
+        trustedHeldOrigin=null; lastCorrectionTrusted=false
+        roiTightMatches=0; roiWideMatches=0; roiFullFallbacks=0
         // Never let guidance outlines become part of the captured game state.
         AutoService.live?.clearGuide(true)
         // Once TWO independently verified placements agree on this slot's
@@ -515,9 +527,48 @@ class CaptureService : Service() {
             DragAlignment.locateHeldBelowSnappedPreview(image,beforeImage!!,frame,
                 shape,targetX,targetY,fingerX,fingerY)
             else null
-        val regularHeld=if(phase==Phase.ALIGN && targetMatch==null && stackedPreview==null)
-            DragAlignment.locate(image,beforeImage!!,frame,shape,fingerX,fingerY)
+        // v1.4.13: Do not scan a tall/wide part of the frame from
+        // scratch on EVERY held image. Prior fully verified sprite pixels
+        // plus the most recent commanded travel give a predicted origin.
+        // Strict shape+novelty checks run inside 0.9 then 2.3-cell windows.
+        // If both miss, the existing global search and all specialized
+        // recoveries remain available (no trusting motion alone).
+        val predictedOrigin=if(phase==Phase.ALIGN && targetMatch==null &&
+                stackedPreview==null) {
+            val trusted=trustedHeldOrigin
+            when {
+                trusted==null -> null
+                lastCorrectionOrigin!=null && !lastCorrectionTrusted -> null
+                lastCorrectionOrigin!=null -> {
+                    val old=lastCorrectionOrigin!!
+                    Pair(old.x+lastCorrectionStepX*dragResponse.gainX(),
+                         old.y+lastCorrectionStepY*dragResponse.gainY())
+                }
+                else -> Pair(trusted.x,trusted.y)
+            }
+        } else null
+        val roiTight=if(predictedOrigin!=null)
+            DragAlignment.locatePredicted(image,beforeImage!!,frame,shape,
+                predictedOrigin.first,predictedOrigin.second,.9f)
             else null
+        val roiWide=if(predictedOrigin!=null && roiTight==null)
+            DragAlignment.locatePredicted(image,beforeImage!!,frame,shape,
+                predictedOrigin.first,predictedOrigin.second,2.3f)
+            else null
+        val regularHeld=if(phase==Phase.ALIGN && targetMatch==null &&
+                stackedPreview==null) {
+            val match=roiTight ?: roiWide ?: DragAlignment.locate(
+                image,beforeImage!!,frame,shape,fingerX,fingerY)
+            if(roiTight!=null) roiTightMatches++
+            else if(roiWide!=null) roiWideMatches++
+            else roiFullFallbacks++
+            match
+        } else null
+        // Only an actual strict sprite matcher can renew prediction trust.
+        // A snapped-grid proxy, partial/occluded sprite or gesture command
+        // cannot seed this state; all such cases use the original fallback.
+        if(targetMatch!=null) trustedHeldOrigin=targetMatch
+        else if(regularHeld!=null) trustedHeldOrigin=regularHeld
         // Diagnostic (13)/(17): a moving colored piece can overlay ONE
         // existing SAME-COLOR occupied BOARD cell. Normal tracking first.
         // This fallback is correction-only, never sufficient to release.
@@ -749,6 +800,7 @@ class CaptureService : Service() {
                 return
             }
             lastCorrectionOrigin=found
+            lastCorrectionTrusted=targetMatch!=null || regularHeld!=null
             lastCorrectionStepX=stepX
             lastCorrectionStepY=stepY
             fingerX += stepX; fingerY += stepY
@@ -778,6 +830,10 @@ class CaptureService : Service() {
             .put("servoFailureDetail",lastServoFailureDetail ?: JSONObject.NULL)
             .put("usedBoardOverlapRecovery",usedBoardOverlapRecovery)
             .put("boardOverlapShape",lastBoardOverlapShape ?: JSONObject.NULL)
+            .put("roiTightMatches",roiTightMatches)
+            .put("roiWideMatches",roiWideMatches)
+            .put("roiFullFallbacks",roiFullFallbacks)
+            .put("lastCorrectionTrusted",lastCorrectionTrusted)
             .put("usedComboClearPreview",usedComboClearPreview)
             .put("usedLineGlowPreview",usedLineGlowPreview)
             .put("usedBevelZigzagRecovery",usedBevelZigzagRecovery)
