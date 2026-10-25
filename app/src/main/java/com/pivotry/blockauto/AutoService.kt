@@ -52,7 +52,7 @@ class AutoService : AccessibilityService() {
             setPadding((8*dp).toInt(),(3*dp).toInt(),(8*dp).toInt(),(5*dp).toInt())
         }
         val button = Button(this).apply {
-            text = "▶ 자동 시작"
+            text = "▶ 시작"
             setOnClickListener {
                 val capture = CaptureService.active
                 if (capture == null) setStatus("앱에서 화면 공유를 시작하세요") else capture.toggle()
@@ -67,8 +67,13 @@ class AutoService : AccessibilityService() {
             text = "모드: 추천"
             setOnClickListener {
                 val capture=CaptureService.active
-                if (capture == null) setStatus("앱에서 화면 공유를 시작하세요")
-                else capture.setAutomatic(!capture.isAutomatic())
+                if(capture==null) {
+                    val current=getSharedPreferences("play_mode",MODE_PRIVATE).getBoolean("auto",false)
+                    val next=!current
+                    getSharedPreferences("play_mode",MODE_PRIVATE).edit().putBoolean("auto",next).apply()
+                    setAutomatic(next)
+                    setStatus("모드 변경됨 · 앱에서 화면 공유를 시작하세요")
+                } else capture.setAutomatic(!capture.isAutomatic())
             }
         }
         layout.addView(button); layout.addView(mode); layout.addView(status)
@@ -150,7 +155,7 @@ class AutoService : AccessibilityService() {
         ))
         guideView = overlay
         floating = layout; toggleButton = button; modeButton=mode; statusText = status
-        setAutomatic(CaptureService.active?.isAutomatic() ?: false)
+        setAutomatic(CaptureService.active?.isAutomatic() ?: getSharedPreferences("play_mode",MODE_PRIVATE).getBoolean("auto",false))
     }
     /** In recommendation mode the overlay is never itself treated as a tile. */
     fun cleanCaptured(image: com.pivotry.blockauto.core.Game.Image): com.pivotry.blockauto.core.Game.Image {
