@@ -83,6 +83,12 @@ class CaptureService : Service() {
     private var directDragUsed = false
     private var directDragCount = 0
     private var stagedDragCount = 0
+    private var verifiedDirectCount = 0
+    private var verifiedStagedCount = 0
+    private var motionStartedAt = 0L
+    private var motionGestureCount = 0
+    private var verifiedGestureTotal = 0
+    private var verifiedMotionMillisTotal = 0L
     private val comboVision by lazy { ComboVision() }
     private var observedCombo=-1
     private var observedComboAt=0L
@@ -150,6 +156,9 @@ class CaptureService : Service() {
             dragCalibration.reset()
             pendingDragSample=null
             directDragUsed=false; directDragCount=0; stagedDragCount=0
+            verifiedDirectCount=0; verifiedStagedCount=0
+            motionStartedAt=0L; motionGestureCount=0
+            verifiedGestureTotal=0; verifiedMotionMillisTotal=0L
             observedCombo=-1; observedComboAt=0L; boardTop=0f; boardCell=0f
             actionFloor = Long.MIN_VALUE; phaseAt = SystemClock.uptimeMillis()
             status(if(automatic) "자동 플레이 · 게임판 확인 중" else "추천 모드 · 게임판 확인 중")
@@ -250,7 +259,19 @@ class CaptureService : Service() {
                     }
                 }
                 pendingDragSample=null
-                status("설치 확인 · " + verifiedMoves + "수 · 직접 "+directDragCount+" / 기본 "+stagedDragCount)
+                if(directDragUsed) verifiedDirectCount++ else verifiedStagedCount++
+                val motionDuration=if(motionStartedAt>0) now-motionStartedAt else 0
+                verifiedMotionMillisTotal+=motionDuration
+                verifiedGestureTotal+=motionGestureCount
+                val avgGestures=if(verifiedMoves>0) verifiedGestureTotal/(verifiedMoves.toFloat()) else 0f
+                android.util.Log.i("BlockBlastAuto",
+                    "VERIFIED mode="+(if(directDragUsed)"calibrated" else "staged")+
+                    " gestures="+motionGestureCount+" durationMs="+motionDuration+
+                    " corrections="+corrections+" averageGestureCount="+avgGestures+
+                    " verifiedDirect="+verifiedDirectCount+
+                    " verifiedStaged="+verifiedStagedCount)
+                status("설치 "+verifiedMoves+"수 · 직접 "+verifiedDirectCount+
+                    " / 기본 "+verifiedStagedCount+" · 평균 제스처 "+String.format(java.util.Locale.US,"%.1f",avgGestures))
                 phase = Phase.IDLE; stableSignature = ""; beforeImage = null; probeImage = null; before = null
                 verifier = null; retries = 0; retrySignature = ""; actionFloor = Long.MIN_VALUE
             } else if (now-phaseAt > 3200) {
@@ -322,6 +343,8 @@ class CaptureService : Service() {
         // Invalid/offscreen/uncertain predictions fall back to the cold path.
         val predicted=dragCalibration.predict(shape.slot,shape.piece,frame.cell,
             targetX,targetY,frame.width,frame.height)
+        motionStartedAt=now
+        motionGestureCount=0
         directDragUsed=predicted!=null
         if(predicted!=null) {
             directDragCount++
@@ -523,6 +546,15 @@ class CaptureService : Service() {
             .put("verifiedCalibrationSamples",dragCalibration.confirmedSamples())
             .put("directDragsAttempted",directDragCount)
             .put("stagedDragsAttempted",stagedDragCount)
+            .put("verifiedDirectDrags",verifiedDirectCount)
+            .put("verifiedStagedDrags",verifiedStagedCount)
+            .put("currentGestureCount",motionGestureCount)
+            .put("currentMotionDurationMs",if(motionStartedAt>0)
+                SystemClock.uptimeMillis()-motionStartedAt else 0L)
+            .put("averageVerifiedGestureCount",
+                if(verifiedMoves>0) verifiedGestureTotal/verifiedMoves.toFloat() else JSONObject.NULL)
+            .put("averageVerifiedMotionMillis",
+                if(verifiedMoves>0) verifiedMotionMillisTotal/verifiedMoves else JSONObject.NULL)
             .put("visibleMovingShapeX",if(phase==Phase.PICKED && probeImage!=null)
                 DragAlignment.locatePickedAfterRetry(image,original,probeImage!!,
                     frame,shape,fingerX,fingerY,probeDX,probeDY)?.x ?: JSONObject.NULL else JSONObject.NULL)
@@ -557,6 +589,7 @@ class CaptureService : Service() {
     private fun scaleX(frame: Game.Frame) = physicalWidth.toFloat()/frame.width
     private fun scaleY(frame: Game.Frame) = physicalHeight.toFloat()/frame.height
     private fun gesture(epoch: Int,next: Phase,action: (AutoService,(Boolean)->Unit)->Unit) {
+        motionGestureCount++
         inFlight = true; actionFloor = timestamp
         main.post {
             if (!valid(epoch)) return@post
