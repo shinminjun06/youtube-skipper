@@ -1005,7 +1005,71 @@ public final class CoreChecks {
             "each newly held block starts a fresh motor response calibration");
     }
 
-    public static void main(String[] args) throws Exception {        measuredSpriteResponseRegression();
+    /**
+     * v1.4.3: latency reduction is NEVER enabled solely by an accessibility
+     * onCompleted callback or by visual movement. Only an actual board/tray
+     * placement verified through MoveVerifier may invoke verified().
+     * Simulated gesture budgets are time parameters, NOT real-game speedups.
+     */
+    static void successGatedSpeedRegression() {
+        AdaptivePace pace=new AdaptivePace();
+        check(pace.tier()==AdaptivePace.Tier.BASE,"new autoplay begins at known-good v1.4.2 timing");
+        check(pace.pickupHoldMs()==160,"game's established press-to-pick duration is preserved");
+        check(pace.firstTravelMs()==500 && pace.probeMs()==320 &&
+              pace.correctionMs()==350 && pace.releaseMs()==150,
+              "cold-start keeps exact proven gesture durations");
+        check(pace.postGestureReadMs()==160 && pace.framePollMs()==130 &&
+              pace.boardStableMs()==200 && pace.heldStableMs()==180,
+              "cold-start keeps exact proven capture timing");
+        pace.verified(1,5);
+        check(pace.tier()==AdaptivePace.Tier.BASE,
+            "one confirmed placement does not activate untested fast path");
+        pace.verified(2,5);
+        check(pace.tier()==AdaptivePace.Tier.QUICK,
+            "two clean verified placements activate moderate speed");
+        check(pace.firstTravelMs()==405 && pace.probeMs()==265 &&
+              pace.correctionMs()==295 && pace.releaseMs()==140,
+              "moderate speed shortens travel without skipping phases");
+        check(pace.heldStableMs()>=150 && pace.boardStableMs()>=175,
+            "visual identity and actual board verification require independent stability");
+        for(int i=0;i<3;i++)pace.verified(1,4);
+        check(pace.tier()==AdaptivePace.Tier.FAST,
+            "five consecutively clean placements activate fast path");
+        check(pace.firstTravelMs()==345 && pace.probeMs()==225 &&
+              pace.correctionMs()==260 && pace.releaseMs()==130,
+              "fast path remains bounded by conservative gesture durations");
+        check(pace.postGestureReadMs()>=110 && pace.framePollMs()>=85,
+            "faster polling still leaves the game time to render");
+        check(pace.pickupHoldMs()==160,
+            "faster mode never shortens press-to-pick safety dwell");
+        int oldBudget=pace.pickupHoldMs()+500+320+350+150+2*160+2*130+200+180;
+        int fastBudget=pace.pickupHoldMs()+pace.firstTravelMs()+pace.probeMs()+
+            pace.correctionMs()+pace.releaseMs()+2*pace.postGestureReadMs()+
+            2*pace.framePollMs()+pace.boardStableMs()+pace.heldStableMs();
+        double savings=(oldBudget-fastBudget)*100.0/oldBudget;
+        check(savings>20 && savings<40,"modeled schedule saves time without reckless sub-100ms strokes");
+        System.out.printf(java.util.Locale.US,
+            "MODELED pace: %.1f%% shorter scheduled gesture/wait budget (%dms to %dms, not real game latency)%n",
+            savings,oldBudget,fastBudget);
+
+        pace.uncertainty();
+        check(pace.tier()==AdaptivePace.Tier.BASE && pace.cleanPlacements()==0,
+            "an uncertain held-piece match resets speed before next command");
+        pace.verified(0,1);
+        check(pace.cleanPlacements()==0,"single gesture callback without full placement ignored");
+        pace.verified(3,7);
+        check(pace.cleanPlacements()==0,"too many corrections prevent unsafe acceleration");
+        pace.verified(1,5);pace.verified(1,5);
+        check(pace.tier()==AdaptivePace.Tier.QUICK,"can safely earn moderate speed again");
+        pace.verified(4,8);
+        check(pace.tier()==AdaptivePace.Tier.BASE,
+            "unexpected correction count forces immediate conservative speed");
+        pace.reset();
+        check(pace.tier()==AdaptivePace.Tier.BASE,"new session cannot inherit old fast mode");
+    }
+
+    public static void main(String[] args) throws Exception {        successGatedSpeedRegression();
+        measuredSpriteResponseRegression();
 
         verticalFiveSelectedTrayOverlapRegression();        verifiedDragCalibrationRegression();
         adaptiveServoComparison();
