@@ -79,6 +79,11 @@ class CaptureService : Service() {
     private val scoreTracker = ScoreTracker()
     /** Learned only after the independently verified board transition. */
     private val dragCalibration = DragCalibration()
+    /** Per-stroke measured sprite travel / finger travel; NEVER authorizes release. */
+    private val dragResponse = DragResponse()
+    private var lastCorrectionOrigin: DragAlignment.Origin? = null
+    private var lastCorrectionStepX=0f
+    private var lastCorrectionStepY=0f
     private var pendingDragSample: DragCalibration.Observation? = null
     private var directDragUsed = false
     private var directDragCount = 0
@@ -154,6 +159,8 @@ class CaptureService : Service() {
             stableSignature = ""; lastRecommendedSignature=""; observed = null; retries = 0; retrySignature = ""; noForegroundSince = 0L
             scoreTracker.reset()
             dragCalibration.reset()
+            dragResponse.reset()
+            lastCorrectionOrigin=null
             pendingDragSample=null
             directDragUsed=false; directDragCount=0; stagedDragCount=0
             verifiedDirectCount=0; verifiedStagedCount=0
@@ -329,6 +336,7 @@ class CaptureService : Service() {
         }
         before = frame; beforeImage = image; probeImage = null
         pendingDragSample=null
+        dragResponse.reset();lastCorrectionOrigin=null
         probeDX = 0f; probeDY = 0f; selected = shape
         verifier = MoveVerifier(frame,move.piece,move.x,move.y)
         targetX = frame.left+move.x*frame.cell
@@ -427,18 +435,30 @@ class CaptureService : Service() {
         // command direction and global uniqueness are already confirmed.
         // Neither PICKED matcher can release a piece at a destination.
         val directed=if(phase==Phase.PICKED)
-            DragAlignment.locateMoving(image,beforeImage!!,probeImage!!,frame,shape,
+            DragAlignment.locateMovingEvidence(image,beforeImage!!,probeImage!!,frame,shape,
                 fingerX,fingerY,probeDX,probeDY)
             else null
         val sourceOverlapRecovery=if(phase==Phase.PICKED && directed==null)
-            DragAlignment.locatePickedAfterRetry(image,beforeImage!!,probeImage!!,
+            DragAlignment.locatePickedAfterRetryEvidence(image,beforeImage!!,probeImage!!,
                 frame,shape,fingerX,fingerY,probeDX,probeDY)
             else null
-        val found=if(phase==Phase.PICKED) directed ?: sourceOverlapRecovery
+        val pickupMotion=directed ?: sourceOverlapRecovery
+        val found=if(phase==Phase.PICKED) pickupMotion?.latest
             else targetMatch ?: DragAlignment.locate(image,beforeImage!!,frame,shape,fingerX,fingerY)
         if(sourceOverlapRecovery!=null)
             android.util.Log.i("BlockBlastAuto","pickup confirmed with selected-tray source mask; "+
-                "directed unique shape at "+sourceOverlapRecovery.x+","+sourceOverlapRecovery.y)
+                "directed unique shape at "+sourceOverlapRecovery.latest.x+","+sourceOverlapRecovery.latest.y)
+        // This evidence is based on a WHOLE moving shape and a deliberate
+        // finger probe. Do not estimate gain from the thumbnail, guessed
+        // pointer/sprite offset, or simply a successful Android callback.
+        if(pickupMotion!=null && !dragResponse.measured()) {
+            if(dragResponse.observe(probeDX,probeDY,
+                    pickupMotion.movedX,pickupMotion.movedY,frame.cell))
+                android.util.Log.i("BlockBlastAuto","verified probe motor gain "+
+                    dragResponse.gainX()+","+dragResponse.gainY()+
+                    " commanded="+probeDX+","+probeDY+
+                    " sprite="+pickupMotion.movedX+","+pickupMotion.movedY)
+        }
         if (!valid(epoch)) return
         if (found == null) {
             observed = null
@@ -468,6 +488,21 @@ class CaptureService : Service() {
             observed = found; observedAt = now; return
         }
         if (now-observedAt < 180) return
+        if(phase==Phase.ALIGN) {
+            // At most one gain update per completed correction gesture.
+            // A subsequent full-shape observation is independent evidence
+            // of how much this screen actually moved for that finger step.
+            lastCorrectionOrigin?.let { from ->
+                val actualX=found.x-from.x
+                val actualY=found.y-from.y
+                if(dragResponse.observe(lastCorrectionStepX,lastCorrectionStepY,
+                        actualX,actualY,frame.cell))
+                    android.util.Log.i("BlockBlastAuto",
+                        "measured correction gain="+dragResponse.gainX()+","+
+                        dragResponse.gainY()+" actual="+actualX+","+actualY)
+                lastCorrectionOrigin=null
+            }
+        }
         val dx = targetX-found.x; val dy = targetY-found.y
         android.util.Log.i("BlockBlastAuto","align "+phase+" match="+(if(targetMatch!=null)"TARGET" else "RECOVERY")+
             " origin="+found.x+","+found.y+" delta="+dx+","+dy)
@@ -522,13 +557,26 @@ class CaptureService : Service() {
                 halt("블록 추적 좌표 불일치 · 안전 정지")
                 return
             }
-            val stepX=DragCalibration.correction(dx,frame.cell)
-            val stepY=DragCalibration.correction(dy,frame.cell)
+            // The game may translate an input by 1.5x (real v1.4.1 case).
+            // Divide by the measured visual response and prevent the sprite
+            // from leaving the image before it can be reobserved.
+            val step=dragResponse.correction(dx,dy,found.x,found.y,
+                shape.piece.w,shape.piece.h,frame.cell,frame.width,frame.height)
+            val stepX=step[0]; val stepY=step[1]
+            if(abs(stepX)<.5f && abs(stepY)<.5f) {
+                freezeFailure(image,"CORRECTION_BLOCKED_BY_CAPTURE_BOUNDARY")
+                halt("화면 경계 때문에 안전한 보정 불가 · 자동 정지")
+                return
+            }
+            lastCorrectionOrigin=found
+            lastCorrectionStepX=stepX
+            lastCorrectionStepY=stepY
             fingerX += stepX; fingerY += stepY
             if (fingerX<2 || fingerX>frame.width-2 || fingerY<2 || fingerY>frame.height-2) { halt("터치 범위를 벗어나는 배치 · 정지"); return }
-            android.util.Log.i("BlockBlastAuto","visual servo "+corrections+
+            android.util.Log.i("BlockBlastAuto","response-aware servo "+corrections+
                 " directStart="+directDragUsed+" requested="+dx+","+dy+
-                " bounded="+stepX+","+stepY+" actualFinger="+fingerX+","+fingerY)
+                " spriteGain="+dragResponse.gainX()+","+dragResponse.gainY()+
+                " commanded="+stepX+","+stepY+" actualFinger="+fingerX+","+fingerY)
             status("블록 위치 단계 보정 " + corrections)
             gesture(epoch,Phase.ALIGN) { service,done -> service.moveHeld(fingerX*scaleX(frame),fingerY*scaleY(frame),true,350,done) }
         }
@@ -546,6 +594,9 @@ class CaptureService : Service() {
             .put("observedOriginY",observed?.y ?: JSONObject.NULL)
             .put("pickupRetry",phase==Phase.PICKED && corrections==1)
             .put("calibratedDirectStart",directDragUsed)
+            .put("visualResponseMeasured",dragResponse.measured())
+            .put("fingerToSpriteGainX",dragResponse.gainX())
+            .put("fingerToSpriteGainY",dragResponse.gainY())
             .put("verifiedCalibrationSamples",dragCalibration.confirmedSamples())
             .put("directDragsAttempted",directDragCount)
             .put("stagedDragsAttempted",stagedDragCount)
