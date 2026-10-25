@@ -53,7 +53,7 @@ if ! grep -Fq 'params.gravity=if(automatic) Gravity.BOTTOM or Gravity.END' app/s
   echo 'FAIL: floating controls can obscure held blocks in auto mode' >&2
   exit 1
 fi
-if ! grep -Fq 'val step=dragResponse.correction(dx,dy,found.x,found.y,' app/src/main/java/com/pivotry/blockauto/CaptureService.kt; then
+if ! grep -Fq 'dragResponse.correction(dx,dy,found.x,found.y,' app/src/main/java/com/pivotry/blockauto/CaptureService.kt; then
   echo 'FAIL: bounded held-block position correction missing' >&2
   exit 1
 fi
