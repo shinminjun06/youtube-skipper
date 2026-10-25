@@ -902,7 +902,9 @@ public final class CoreChecks {
         // shape appears later at that same location.
         int[] wrong=bg.clone();
         int cX=(int)(327+cell*.5f),cY=(int)(1074+3.5f*cell);
-        for(int y=cY-5;y<cY+5;y++)for(int x=cX-5;x<cX+5;x++)
+        // A whole already-colored center region must remain invalid even
+        // if coarse-to-fine sprite search shifts its sampling origin.
+        for(int y=cY-22;y<cY+22;y++)for(int x=cX-22;x<cX+22;x++)
             wrong[y*w+x]=green;
         Game.Image badBefore=new Game.Image(w,h,wrong);
         Game.Image badPrev=lifted(badBefore,frame,selected,405,1074);
