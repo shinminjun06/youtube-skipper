@@ -67,7 +67,7 @@ class MainActivity : Activity() {
         }
         label("3. 모드를 선택한 뒤 블록 블라스트를 열고 게임 위 플로팅 창에서 ▶ 시작을 누르세요.")
         label("추천 모드에서는 초록색 표시를 보고 직접 놓으세요. 자동 모드에서만 앱이 블록을 드래그하며, 설치 결과를 검증합니다.",14f)
-        label("정지 버튼을 누르면 추천 또는 조작을 멈춥니다. 화면을 회전했거나 공유가 종료되면 다시 공유하세요.",14f)
+        label("자동 모드에서 ▶ 시작을 누르면 드래그 중 화면 인식을 방해하지 않도록 플로팅 창이 사라집니다. 멈추려면 Android 알림을 내려 Block Blast AutoPlay의 '종료'를 누르거나 이 앱의 정지를 누르세요. 중단하면 플로팅 창은 복원됩니다.",14f)
         button("정지") { CaptureService.active?.halt("사용자가 정지했습니다") }
         button("위치 측정 실패 진단 파일 저장") {
             val service = CaptureService.active
