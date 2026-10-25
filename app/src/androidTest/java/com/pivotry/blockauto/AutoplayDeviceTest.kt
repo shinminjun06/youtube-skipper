@@ -82,6 +82,22 @@ class AutoplayDeviceTest {
         instrumentation.runOnMainSync { CaptureService.active!!.halt("테스트 정지") }
         await("stop after continuous play releases any next pickup") { !TouchFixtureActivity.live!!.held }
     }
+    @Test fun n_automaticPlaybackHidesCaptureOccludingControlsUntilStop() {
+        val service=startController(false,true,3.4f,true)
+        val overlay=AutoService.live!!
+        val panelField=AutoService::class.java.getDeclaredField("floating").apply { isAccessible=true }
+        val panel=panelField.get(overlay) as View
+        await("automatic play must hide floating UI from MediaProjection") {
+            panel.visibility==View.INVISIBLE
+        }
+        val guideField=AutoService::class.java.getDeclaredField("guideView").apply {isAccessible=true}
+        val guide=guideField.get(overlay) as View
+        Assert.assertEquals("full-screen guide overlay hidden during auto gestures",
+            View.INVISIBLE,guide.visibility)
+        instrumentation.runOnMainSync { service.halt("test autoplay overlay recovery") }
+        await("controls restored after automatic stop") { panel.visibility==View.VISIBLE }
+        Assert.assertEquals(View.VISIBLE,guide.visibility)
+    }
     @Test fun j_failedPickupStopsAndExportsFrozenDiagnosticFrames() {
         val service=startController(false,true,3.4f,true)
         await("ignored pickup stops with diagnostics",16000) { !service.isRunning()&&service.hasDiagnostics() }
