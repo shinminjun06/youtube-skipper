@@ -77,6 +77,12 @@ class CaptureService : Service() {
     private var retries = 0
     private var lastDetectionCode = ""
     private val scoreTracker = ScoreTracker()
+    /** Learned only after the independently verified board transition. */
+    private val dragCalibration = DragCalibration()
+    private var pendingDragSample: DragCalibration.Observation? = null
+    private var directDragUsed = false
+    private var directDragCount = 0
+    private var stagedDragCount = 0
     private val comboVision by lazy { ComboVision() }
     private var observedCombo=-1
     private var observedComboAt=0L
@@ -141,6 +147,9 @@ class CaptureService : Service() {
             phase = Phase.IDLE; inFlight = false; beforeImage = null; probeImage = null; before = null; verifier = null; failureTrace = null
             stableSignature = ""; lastRecommendedSignature=""; observed = null; retries = 0; retrySignature = ""; noForegroundSince = 0L
             scoreTracker.reset()
+            dragCalibration.reset()
+            pendingDragSample=null
+            directDragUsed=false; directDragCount=0; stagedDragCount=0
             observedCombo=-1; observedComboAt=0L; boardTop=0f; boardCell=0f
             actionFloor = Long.MIN_VALUE; phaseAt = SystemClock.uptimeMillis()
             status(if(automatic) "자동 플레이 · 게임판 확인 중" else "추천 모드 · 게임판 확인 중")
@@ -148,6 +157,8 @@ class CaptureService : Service() {
     }
     fun halt(reason: String) {
         running = false; generation.incrementAndGet(); targetApp = null
+        // The pending measurement must not survive an interrupted gesture.
+        if(::worker.isInitialized) worker.post {pendingDragSample=null}
         main.post { AutoService.live?.abortHold(); AutoService.live?.clearGuide(true); AutoService.live?.setRunning(false) }
         status(reason)
     }
@@ -229,10 +240,21 @@ class CaptureService : Service() {
         if (phase == Phase.IDLE) scoreTracker.observe(frame)
         if (phase == Phase.VERIFY) {
             if (stable(frame.signature(),now) && verifier!!.matches(frame)) {
-                verifiedMoves++; status("설치 확인 · " + verifiedMoves + "수")
+                verifiedMoves++
+                pendingDragSample?.let { sample ->
+                    if(dragCalibration.recordVerified(sample)) {
+                        android.util.Log.i("BlockBlastAuto",
+                            "verified calibration slot="+sample.slot+
+                            " agreements="+dragCalibration.confidence(sample.slot)+
+                            " total="+dragCalibration.confirmedSamples())
+                    }
+                }
+                pendingDragSample=null
+                status("설치 확인 · " + verifiedMoves + "수 · 직접 "+directDragCount+" / 기본 "+stagedDragCount)
                 phase = Phase.IDLE; stableSignature = ""; beforeImage = null; probeImage = null; before = null
                 verifier = null; retries = 0; retrySignature = ""; actionFloor = Long.MIN_VALUE
             } else if (now-phaseAt > 3200) {
+                pendingDragSample=null
                 if (verifier!!.unchanged(frame) && retries < 1) {
                     retries++; retrySignature = frame.signature(); phase = Phase.IDLE; stableSignature = ""
                     actionFloor = Long.MIN_VALUE; status("설치 안 됨 · 새 화면으로 1회 재시도")
@@ -285,6 +307,7 @@ class CaptureService : Service() {
             return
         }
         before = frame; beforeImage = image; probeImage = null
+        pendingDragSample=null
         probeDX = 0f; probeDY = 0f; selected = shape
         verifier = MoveVerifier(frame,move.piece,move.x,move.y)
         targetX = frame.left+move.x*frame.cell
@@ -292,13 +315,34 @@ class CaptureService : Service() {
         targetApp = app; corrections = 0; observed = null
         // Never let guidance outlines become part of the captured game state.
         AutoService.live?.clearGuide(true)
-        fingerX = frame.width*.5f
-        fingerY = min(frame.height-frame.cell*.7f,
-            frame.top+8*frame.cell+shape.piece.h*frame.cell*.5f+2*frame.cell)
-        status("자동 배치 · 블록 " + (shape.slot+1) + "번 잡기 · 콤보 " + scoreTracker.combo())
-        gesture(epoch,Phase.PICKED) { service,done ->
-            service.beginDrag(shape.pickX*scaleX(frame),shape.pickY*scaleY(frame),
-                fingerX*scaleX(frame),fingerY*scaleY(frame),app,done)
+        // Once TWO independently verified placements agree on this slot's
+        // shape-normalized finger/sprite offset, predict the FINAL pointer
+        // location and drag there in one continuing gesture. The finger
+        // remains held until strict target preview and board verification.
+        // Invalid/offscreen/uncertain predictions fall back to the cold path.
+        val predicted=dragCalibration.predict(shape.slot,shape.piece,frame.cell,
+            targetX,targetY,frame.width,frame.height)
+        directDragUsed=predicted!=null
+        if(predicted!=null) {
+            directDragCount++
+            fingerX=predicted[0]; fingerY=predicted[1]
+            status("학습형 직접 이동 · 블록 "+(shape.slot+1)+"번 · 목표 검증 중")
+            android.util.Log.i("BlockBlastAuto",
+                "calibrated direct stroke slot="+shape.slot+" fingers="+fingerX+","+fingerY)
+            gesture(epoch,Phase.ALIGN) { service,done ->
+                service.beginDrag(shape.pickX*scaleX(frame),shape.pickY*scaleY(frame),
+                    fingerX*scaleX(frame),fingerY*scaleY(frame),app,done)
+            }
+        } else {
+            stagedDragCount++
+            fingerX = frame.width*.5f
+            fingerY = min(frame.height-frame.cell*.7f,
+                frame.top+8*frame.cell+shape.piece.h*frame.cell*.5f+2*frame.cell)
+            status("기본 안전 이동 · 블록 " + (shape.slot+1) + "번 · 콤보 " + scoreTracker.combo())
+            gesture(epoch,Phase.PICKED) { service,done ->
+                service.beginDrag(shape.pickX*scaleX(frame),shape.pickY*scaleY(frame),
+                    fingerX*scaleX(frame),fingerY*scaleY(frame),app,done)
+            }
         }
     }
     private fun recognitionMessage(result: Recognizer.Detection): String = when (result.issue) {
@@ -427,6 +471,12 @@ class CaptureService : Service() {
         val snappedToTarget=targetCellsMatch && abs(dx)<frame.cell*.32f &&
             abs(dy)<frame.cell*.32f
         if (phase == Phase.ALIGN && snappedToTarget) {
+            // Capture a learning candidate, NOT a confirmed sample.
+            // It is committed ONLY if MoveVerifier proves the expected
+            // board and consumed tray slot after the pointer is released.
+            pendingDragSample=DragCalibration.Observation(shape.slot,
+                shape.piece.w,shape.piece.h,frame.cell,
+                fingerX,fingerY,found.x,found.y)
             status("목표 칸 미리보기 확인 · 블록 놓기")
             android.util.Log.i("BlockBlastAuto","ALIGN target cells confirmed, render offset="+dx+","+dy)
             gesture(epoch,Phase.VERIFY) { service,done -> service.moveHeld(fingerX*scaleX(frame),fingerY*scaleY(frame),false,150,done) }
@@ -446,11 +496,12 @@ class CaptureService : Service() {
                 halt("블록 추적 좌표 불일치 · 안전 정지")
                 return
             }
-            val stepX=DragStep.axis(dx,frame.cell)
-            val stepY=DragStep.axis(dy,frame.cell)
+            val stepX=DragCalibration.correction(dx,frame.cell)
+            val stepY=DragCalibration.correction(dy,frame.cell)
             fingerX += stepX; fingerY += stepY
             if (fingerX<2 || fingerX>frame.width-2 || fingerY<2 || fingerY>frame.height-2) { halt("터치 범위를 벗어나는 배치 · 정지"); return }
-            android.util.Log.i("BlockBlastAuto","correction "+corrections+" requested="+dx+","+dy+
+            android.util.Log.i("BlockBlastAuto","visual servo "+corrections+
+                " directStart="+directDragUsed+" requested="+dx+","+dy+
                 " bounded="+stepX+","+stepY+" actualFinger="+fingerX+","+fingerY)
             status("블록 위치 단계 보정 " + corrections)
             gesture(epoch,Phase.ALIGN) { service,done -> service.moveHeld(fingerX*scaleX(frame),fingerY*scaleY(frame),true,350,done) }
@@ -468,6 +519,10 @@ class CaptureService : Service() {
             .put("observedOriginX",observed?.x ?: JSONObject.NULL)
             .put("observedOriginY",observed?.y ?: JSONObject.NULL)
             .put("pickupRetry",phase==Phase.PICKED && corrections==1)
+            .put("calibratedDirectStart",directDragUsed)
+            .put("verifiedCalibrationSamples",dragCalibration.confirmedSamples())
+            .put("directDragsAttempted",directDragCount)
+            .put("stagedDragsAttempted",stagedDragCount)
             .put("visibleMovingShapeX",if(phase==Phase.PICKED && probeImage!=null)
                 DragAlignment.locatePickedAfterRetry(image,original,probeImage!!,
                     frame,shape,fingerX,fingerY,probeDX,probeDY)?.x ?: JSONObject.NULL else JSONObject.NULL)
