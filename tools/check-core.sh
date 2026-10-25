@@ -53,7 +53,7 @@ if ! grep -Fq 'params.gravity=if(automatic) Gravity.BOTTOM or Gravity.END' app/s
   echo 'FAIL: floating controls can obscure held blocks in auto mode' >&2
   exit 1
 fi
-if ! grep -Fq 'val stepY=DragCalibration.correction(dy,frame.cell)' app/src/main/java/com/pivotry/blockauto/CaptureService.kt; then
+if ! grep -Fq 'val step=dragResponse.correction(dx,dy,found.x,found.y,' app/src/main/java/com/pivotry/blockauto/CaptureService.kt; then
   echo 'FAIL: bounded held-block position correction missing' >&2
   exit 1
 fi
@@ -99,5 +99,21 @@ if ! grep -Fq 'dragCalibration.predict(shape.slot,shape.piece,frame.cell' app/sr
 fi
 if ! grep -Fq 'if (phase == Phase.ALIGN && snappedToTarget)' app/src/main/java/com/pivotry/blockauto/CaptureService.kt; then
   echo 'FAIL: strictly verified release gate missing' >&2
+  exit 1
+fi
+
+# v1.4.1 ALIGN failure from uploaded diagnostic (8): the visible sprite
+# traveled 1.5x the input finger delta. The motor response must be measured
+# from a uniquely moving whole shape and cap any predicted screen overshoot.
+if ! grep -Fq 'dragResponse.observe(probeDX,probeDY,' app/src/main/java/com/pivotry/blockauto/CaptureService.kt; then
+  echo 'FAIL: pixel response gain not learned from full-shape pickup evidence' >&2
+  exit 1
+fi
+if ! grep -Fq 'float right=width-pieceWidth*cell-pad' app/src/main/java/com/pivotry/blockauto/core/DragResponse.java; then
+  echo 'FAIL: held-block rectangle may leave captured right edge' >&2
+  exit 1
+fi
+if ! grep -Fq 'measuredSpriteResponseRegression();' tests/java/com/pivotry/blockauto/core/CoreChecks.java; then
+  echo 'FAIL: uploaded 1.5x overshoot regression no longer tested' >&2
   exit 1
 fi
