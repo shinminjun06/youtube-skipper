@@ -445,7 +445,13 @@ class CaptureService : Service() {
             .put("width",image.width).put("height",image.height).put("physicalWidth",physicalWidth).put("physicalHeight",physicalHeight)
             .put("gridLeft",frame.left).put("gridTop",frame.top).put("cell",frame.cell).put("board",java.lang.Long.toHexString(frame.board))
             .put("slot",shape.slot).put("piece",shape.piece.key).put("pickX",shape.pickX).put("pickY",shape.pickY)
-            .put("fingerX",fingerX).put("fingerY",fingerY).put("probeDX",probeDX).put("probeDY",probeDY).put("targetX",targetX).put("targetY",targetY).put("uptimeMillis",SystemClock.uptimeMillis())
+            .put("fingerX",fingerX).put("fingerY",fingerY).put("probeDX",probeDX).put("probeDY",probeDY).put("targetX",targetX).put("targetY",targetY)
+            .put("observedOriginX",observed?.x ?: JSONObject.NULL)
+            .put("observedOriginY",observed?.y ?: JSONObject.NULL)
+            .put("targetCellPreview",DragAlignment.targetCellPreview(image,original,frame,shape,
+                kotlin.math.round((targetX-frame.left)/frame.cell).toInt(),
+                kotlin.math.round((targetY-frame.top)/frame.cell).toInt()))
+            .put("uptimeMillis",SystemClock.uptimeMillis())
         failureTrace = FailureTrace(original,image,data.toString(2),probeImage)
         android.util.Log.i("BlockBlastAuto","held match failed " + data.toString())
     }
