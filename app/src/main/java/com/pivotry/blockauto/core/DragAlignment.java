@@ -186,7 +186,7 @@ public final class DragAlignment {
         int mask=0;
         for(int i=0;i<4;i++)
             mask|=1<<(shape.piece.ys[i]*2+shape.piece.xs[i]);
-        if(mask!=0b110101)return null; // upper-left, middle both, bottom-right
+        if(mask!=0b101101)return null; // upper-left, middle both, bottom-right
         if(!isOrangeBevel(shape.color,shape.color))return null;
         float cell=frame.cell,step=Math.max(2f,cell*.10f);
         float minX=Math.max(0,fingerX-4.5f*cell);
