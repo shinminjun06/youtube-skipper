@@ -10,6 +10,7 @@ import android.widget.*
 
 class MainActivity : Activity() {
     private val captureRequest = 2001
+    private val diagnosticRequest = 2002
     private val main = Handler(Looper.getMainLooper())
     private lateinit var state: TextView
     private val refresh = object : Runnable {
@@ -32,11 +33,11 @@ class MainActivity : Activity() {
             this.text = text; textSize = size; setPadding(0,(8*dp).toInt(),0,(14*dp).toInt()); root.addView(this)
         }
         fun button(text: String,action: ()->Unit) { root.addView(Button(this).apply { this.text = text; setOnClickListener { action() } }) }
-        label("Block Blast Advisor",27f)
-        label("${BuildConfig.VERSION_NAME} · 고득점·생존 추천",14f)
+        label("Block Blast Advisor + Auto",27f)
+        label("${BuildConfig.VERSION_NAME} · 추천 + 선택형 자동 플레이",14f)
         state = label("준비 중",16f).apply { setTextIsSelectable(true) }
-        label("콤보 숫자는 게임 화면에 표시될 때 자동 인식합니다. 표시되지 않을 때는 직접 확인한 줄 삭제 기록으로 추적합니다.",14f)
-        label("1. 접근성을 연결하세요. 게임 위에 배치 위치를 표시하기 위해 사용합니다. 직접 게임을 조작하지 않습니다.")
+        label("플로팅 창에서 추천 또는 자동 모드를 선택할 수 있습니다. 기본값은 추천 모드입니다. COMBO가 화면에 표시되면 자동 인식합니다.",14f)
+        label("1. 접근성을 연결하세요. 추천 표시와, 자동 모드에서만 드래그 입력을 보내기 위해 사용합니다.")
         button("접근성 설정 열기") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         label("2. 전체 화면 공유를 허용하세요. 화면은 기기 안에서만 분석하며 외부로 보내지 않습니다.")
         button("화면 공유 시작") {
@@ -47,10 +48,22 @@ class MainActivity : Activity() {
                 @Suppress("DEPRECATION") startActivityForResult(capture,captureRequest)
             }
         }
-        label("3. 블록 블라스트의 세로 게임 화면을 열고, 우측 위 ▶ 추천 시작을 누르세요.")
-        label("초록색 테두리로 표시된 블록을 직접 놓으세요. 앱은 게임을 자동 터치하지 않습니다.",14f)
-        label("추천 정지 버튼을 누르면 표시가 사라집니다. 화면을 회전했거나 공유가 종료되면 다시 공유하세요.",14f)
-        button("추천 정지") { CaptureService.active?.halt("사용자가 정지했습니다") }
+        label("3. 블록 블라스트 세로 화면에서 플로팅 창의 모드: 추천/자동을 선택하고 ▶ 시작을 누르세요.")
+        label("추천 모드에서는 초록색 표시를 보고 직접 놓으세요. 자동 모드에서만 앱이 블록을 드래그하며, 설치 결과를 검증합니다.",14f)
+        label("정지 버튼을 누르면 추천 또는 조작을 멈춥니다. 화면을 회전했거나 공유가 종료되면 다시 공유하세요.",14f)
+        button("정지") { CaptureService.active?.halt("사용자가 정지했습니다") }
+        button("위치 측정 실패 진단 파일 저장") {
+            val service = CaptureService.active
+            if (service?.hasDiagnostics() != true) Toast.makeText(this,"위치 측정 실패 후, 화면 공유를 종료하기 전에 저장할 수 있습니다",Toast.LENGTH_LONG).show()
+            else {
+                service.halt("진단 저장 준비")
+                @Suppress("DEPRECATION") startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE); type = "application/zip"; putExtra(Intent.EXTRA_TITLE,"BlockBlastAuto-Diagnostics.zip")
+                },diagnosticRequest)
+            }
+        }
+        label("자동 모드 위치 추적 실패 시 진단 ZIP을 저장해 보내면 블록 오인식 원인을 확인할 수 있습니다.",12f)
+        label("진단 ZIP에는 조작 직전과 실패 직전의 게임 화면 및 좌표가 포함됩니다. 저장 버튼을 눌렀을 때만 파일을 만들며 자동으로 전송하지 않습니다.",12f)
         button("화면 공유 종료") { stopService(Intent(this,CaptureService::class.java)) }
         label("게임 버전·시각 효과에 따라 인식이 달라질 수 있습니다. 실제 게임 고득점이나 무중단 플레이를 보장하지 않습니다.",12f)
     }
@@ -59,9 +72,15 @@ class MainActivity : Activity() {
     @Deprecated("Activity callback")
     override fun onActivityResult(requestCode: Int,resultCode: Int,data: Intent?) {
         super.onActivityResult(requestCode,resultCode,data)
+        if (requestCode == diagnosticRequest && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            val service = CaptureService.active
+            if (service == null) Toast.makeText(this,"화면 공유가 종료되어 진단 기록이 없습니다",Toast.LENGTH_LONG).show()
+            else service.saveDiagnostics(uri) { error -> Toast.makeText(this,error ?: "진단 ZIP을 저장했습니다",Toast.LENGTH_LONG).show() }
+        }
         if (requestCode == captureRequest && resultCode == RESULT_OK && data != null) {
             startForegroundService(Intent(this,CaptureService::class.java).apply { putExtra("resultCode",resultCode); putExtra("data",data) })
-            Toast.makeText(this,"게임으로 이동해 ▶ 추천 시작을 누르세요",Toast.LENGTH_LONG).show()
+            Toast.makeText(this,"게임으로 이동해 ▶ 자동 시작을 누르세요",Toast.LENGTH_LONG).show()
         }
     }
 }
