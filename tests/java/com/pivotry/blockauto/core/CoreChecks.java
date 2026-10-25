@@ -1070,6 +1070,71 @@ public final class CoreChecks {
      * sprite beyond right edge, leaving a clipped last screenshot and
      * causing ALIGN/NO_HELD_MATCH. Probe was deliberately horizontal.
      */
+
+    static void diagnostic14ComboGlowRegression() {
+        int width=720,height=1560,bg=0xff293052;
+        float cell=79.625f,left=42f,top=368f;
+        long board=0xfbf8020202020203L;
+        Game.Piece redL=new Game.Piece(0,0,1,0,2,0,2,1);
+        Game.Shape selected=new Game.Shape(2,redL,569.5f,1174.5f,0xffe33c47);
+        Game.Frame frame=new Game.Frame(board,java.util.Arrays.asList(selected),
+            left,top,cell,width,height,1f);
+        int[] initial=new int[width*height];
+        java.util.Arrays.fill(initial,bg);
+        for(int row=0;row<8;row++)for(int col=0;col<8;col++)
+            if((board&(1L<<(row*8+col)))!=0)
+                paintCell(initial,width,height,left,top,cell,col,row,0xffdb692b);
+        Game.Image before=new Game.Image(width,height,initial);
+        int[] glow=initial.clone();
+        // Reconstruct the THREE-line preview from diag14:
+        // both bottom rows and vertical column 1 glow dull red.
+        for(int row=6;row<=7;row++)for(int col=0;col<8;col++)
+            paintCell(glow,width,height,left,top,cell,col,row,0xffc53135);
+        for(int row=0;row<8;row++)
+            paintCell(glow,width,height,left,top,cell,1,row,0xffc53135);
+        Game.Image onlyGlow=new Game.Image(width,height,glow.clone());
+        float tx=left,ty=top+6*cell;
+        check(Rules.place(board,redL,0,6).lines==3,
+            "diag14 source board + L forms two rows and one column");
+        check(DragAlignment.locateComboClearPreview(
+            onlyGlow,before,frame,selected,tx,ty,307.06f,1126.74f)==null,
+            "clearing-line red glow ALONE can never authorize release");
+        int[] preview=glow.clone();
+        for(int i=0;i<redL.xs.length;i++)
+            paintCell(preview,width,height,left,top,cell,
+                redL.xs[i],6+redL.ys[i],0xfff78e8d);
+        Game.Image actual=new Game.Image(width,height,preview);
+        check(DragAlignment.targetCellPreview(actual,before,frame,selected,0,6),
+            "all four actual L face cells visibly replace the original board");
+        DragAlignment.Origin recovered=DragAlignment.locateComboClearPreview(
+            actual,before,frame,selected,tx,ty,307.06f,1126.74f);
+        check(recovered!=null && Math.abs(recovered.x-tx)<.001f &&
+            Math.abs(recovered.y-ty)<.001f,
+            "strong L sprite faces over weak glow recover exact three-line target");
+        check(DragAlignment.locateComboClearPreview(
+            actual,before,frame,selected,tx,ty,10f,1126.74f)==null,
+            "implausible held finger cannot authorize glowing board");
+        int[] incomplete=preview.clone();
+        paintCell(incomplete,width,height,left,top,cell,2,7,0xff293052);
+        check(DragAlignment.locateComboClearPreview(
+            new Game.Image(width,height,incomplete),before,frame,selected,
+            tx,ty,307.06f,1126.74f)==null,
+            "one missing L-face cell still rejects release");
+        Game.Frame noClear=new Game.Frame(0L,frame.shapes,
+            left,top,cell,width,height,1f);
+        check(DragAlignment.locateComboClearPreview(
+            actual,before,noClear,selected,tx,ty,307.06f,1126.74f)==null,
+            "ordinary non-combo placements cannot use this recovery");
+    }
+
+    static void paintCell(int[] pixels,int width,int height,
+            float left,float top,float cell,int x,int y,int rgb) {
+        int x0=Math.max(0,(int)(left+x*cell)), x1=Math.min(width,(int)(left+(x+1)*cell));
+        int y0=Math.max(0,(int)(top+y*cell)), y1=Math.min(height,(int)(top+(y+1)*cell));
+        for(int yy=y0;yy<y1;yy++)for(int xx=x0;xx<x1;xx++)
+            pixels[yy*width+xx]=rgb;
+    }
+
     static void diagnostic13OccupiedGreenBoardRegression() {
         // User v1.4.7 diagnostic (13): full 2x3 green sprite
         // at approximately (371,671), target (361,447.5), finger
@@ -1351,6 +1416,7 @@ public final class CoreChecks {
     }
 
     public static void main(String[] args) throws Exception {
+        diagnostic14ComboGlowRegression();
         diagnostic13OccupiedGreenBoardRegression();
         diagnostic11StackedPreviewRegression();
         pixelSamplerGeometryRegression();

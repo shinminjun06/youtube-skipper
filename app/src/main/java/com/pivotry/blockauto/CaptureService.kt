@@ -88,6 +88,7 @@ class CaptureService : Service() {
     /** Start at v1.4.2-safe speed; accelerate only after verified clean moves. */
     private val pace = AdaptivePace()
     private var usedBoardOverlapRecovery = false
+    private var usedComboClearPreview = false
     private var lastServoFailureDetail: String? = null
     private var lastCorrectionOrigin: DragAlignment.Origin? = null
     private var lastCorrectionStepX=0f
@@ -174,6 +175,7 @@ class CaptureService : Service() {
             lastCorrectionOrigin=null
             lastServoFailureDetail=null
             usedBoardOverlapRecovery=false
+            usedComboClearPreview=false
             pendingDragSample=null
             directDragUsed=false; directDragCount=0; stagedDragCount=0
             verifiedDirectCount=0; verifiedStagedCount=0
@@ -377,6 +379,7 @@ class CaptureService : Service() {
         before = frame; beforeImage = image; probeImage = null
         pendingDragSample=null
         usedBoardOverlapRecovery=false
+        usedComboClearPreview=false
         dragResponse.reset();lastCorrectionOrigin=null
         probeDX = 0f; probeDY = 0f; selected = shape
         verifier = MoveVerifier(frame,move.piece,move.x,move.y)
@@ -515,8 +518,26 @@ class CaptureService : Service() {
             DragAlignment.locateOverOccupiedBoard(image,beforeImage!!,frame,
                 shape,fingerX,fingerY)
             else null
+        // Diag (14): only a three-line-clear preview from an exact red L,
+        // including its distinctive bright face over the dim line-glow,
+        // can recover an otherwise untrackable target. This is a release
+        // proxy, never a physical sprite coordinate or calibration sample.
+        val comboClearPreview=if(phase==Phase.ALIGN && targetMatch==null &&
+                stackedPreview==null && regularHeld==null &&
+                occupiedBoardRecovery==null && !directDragUsed && corrections>=1 &&
+                dragResponse.measured())
+            DragAlignment.locateComboClearPreview(image,beforeImage!!,frame,
+                shape,targetX,targetY,fingerX,fingerY)
+            else null
         val found=if(phase==Phase.PICKED) pickupMotion?.latest
-            else targetMatch ?: stackedPreview ?: regularHeld ?: occupiedBoardRecovery
+            else targetMatch ?: stackedPreview ?: regularHeld ?: occupiedBoardRecovery ?: comboClearPreview
+        if(comboClearPreview!=null) {
+            usedComboClearPreview=true
+            lastCorrectionOrigin=null // never learn response gain from grid proxy
+            pace.uncertainty()
+            android.util.Log.i("BlockBlastAuto",
+                "COMBO_CLEAR_PREVIEW guarded release proxy target="+targetX+","+targetY)
+        }
         if(occupiedBoardRecovery!=null) {
             usedBoardOverlapRecovery=true
             pace.uncertainty()
@@ -609,7 +630,8 @@ class CaptureService : Service() {
         // Recovery-only tracking is NEVER sufficient for a release.
         val targetColumn=kotlin.math.round((targetX-frame.left)/frame.cell).toInt()
         val targetRow=kotlin.math.round((targetY-frame.top)/frame.cell).toInt()
-        val targetCellsMatch=phase==Phase.ALIGN && (targetMatch!=null || stackedPreview!=null) &&
+        val targetCellsMatch=phase==Phase.ALIGN && (targetMatch!=null ||
+            stackedPreview!=null || comboClearPreview!=null) &&
             DragAlignment.targetCellPreview(image,beforeImage!!,frame,shape,targetColumn,targetRow)
         val snappedToTarget=targetCellsMatch && abs(dx)<frame.cell*.32f &&
             abs(dy)<frame.cell*.32f
@@ -619,7 +641,7 @@ class CaptureService : Service() {
             // board and consumed tray slot after the pointer is released.
             // A stacked-preview proxy is NOT the genuine moving sprite
             // coordinate, so it must NEVER update finger-to-sprite calibration.
-            if(stackedPreview!=null || usedBoardOverlapRecovery) {
+            if(stackedPreview!=null || usedBoardOverlapRecovery || comboClearPreview!=null) {
                 pendingDragSample=null
                 pace.uncertainty()
                 android.util.Log.i("BlockBlastAuto",
@@ -702,6 +724,7 @@ class CaptureService : Service() {
             .put("observedOriginY",observed?.y ?: JSONObject.NULL)
             .put("servoFailureDetail",lastServoFailureDetail ?: JSONObject.NULL)
             .put("usedBoardOverlapRecovery",usedBoardOverlapRecovery)
+            .put("usedComboClearPreview",usedComboClearPreview)
             .put("pickupRetry",phase==Phase.PICKED && corrections==1)
             .put("calibratedDirectStart",directDragUsed)
             .put("exactShapeCalibrationConfidence",dragCalibration.confidence(shape.slot,shape.piece.key))

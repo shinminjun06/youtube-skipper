@@ -156,6 +156,83 @@ public final class DragAlignment {
         if(changedCenters && clean<edges*.75f)return -1;
         return hits/(float)total*.7f+clean/(float)edges*.3f;
     }
+
+    /**
+     * Diagnostic (14): on a three-line combo the snapped held L is visually
+     * distinct from the full-row/column clear GLOW, but normal sprite search
+     * cannot isolate its edges. Restrict this exceptional release proxy to
+     * a legal 3x2 right-foot L placement completing >=3 lines, with a newly
+     * colored entire target preview, plausible staged finger position AND
+     * a brighter, contiguous genuine sprite face than the adjacent SAME-HUE
+     * clearing-row glow in EACH occupied target cell.
+     *
+     * A targetCellPreview alone is NOT sufficient because clearing effects
+     * can color every cell red. Return a preview proxy, NEVER sprite motion
+     * evidence; the controller must still enforce stable observations and
+     * independently verify post-release board and consumed tray slot.
+     */
+    public static Origin locateComboClearPreview(Game.Image current,Game.Image before,
+            Game.Frame frame,Game.Shape held,
+            float targetX,float targetY,float fingerX,float fingerY) {
+        if(current==null||before==null||frame==null||held==null||
+           current.width!=before.width||current.height!=before.height||
+           !Float.isFinite(targetX)||!Float.isFinite(targetY)||
+           !Float.isFinite(fingerX)||!Float.isFinite(fingerY)||
+           !Float.isFinite(frame.cell)||frame.cell<=10)return null;
+        Game.Piece p=held.piece;
+        if(p.w!=3||p.h!=2||p.xs.length!=4)return null;
+        int desiredMask=0;
+        for(int i=0;i<p.xs.length;i++)
+            desiredMask|=1<<(p.ys[i]*3+p.xs[i]);
+        if(desiredMask!=0b100111)return null; // ### / ..# L, exact orientation
+        float cell=frame.cell;
+        int col=Math.round((targetX-frame.left)/cell);
+        int row=Math.round((targetY-frame.top)/cell);
+        if(row<5 || col<0 || col+3>8 || row+2>8 ||
+           Math.abs(frame.left+col*cell-targetX)>cell*.06f ||
+           Math.abs(frame.top+row*cell-targetY)>cell*.06f)return null;
+        Rules.Placement placed=Rules.place(frame.board,p,col,row);
+        if(placed==null || placed.lines<3)return null;
+        // A held finger typically trails this 3x2 sprite below/right
+        // by 1..3 board cells; reject arbitrary UI highlights.
+        if(fingerX<targetX+cell*1.4f ||
+           fingerX>targetX+cell*5f ||
+           fingerY<targetY+cell*2.0f ||
+           fingerY>targetY+cell*5.0f)return null;
+        if(!targetCellPreview(current,before,frame,held,col,row))return null;
+        int witnessedRows=0;
+        for(int py=0;py<p.h;py++) {
+            int targetRow=row+py;
+            int neighboringGlow=-1;
+            // Find a non-piece cell on the SAME clearing row that newly
+            // glows in the piece color. Its dimmer face is our baseline.
+            for(int x=0;x<8;x++) {
+                boolean part=false;
+                for(int i=0;i<p.xs.length;i++)if(col+p.xs[i]==x&&p.ys[i]==py)part=true;
+                if(part)continue;
+                float nx=frame.left+(x+.5f)*cell;
+                float ny=frame.top+(targetRow+.32f)*cell;
+                int now=current.at(nx,ny),old=before.at(nx,ny);
+                if(previewMaterial(now,held.color)&&Recognizer.distance(now,old)>60) {
+                    int brightness=Recognizer.hi(now);
+                    if(neighboringGlow<0||brightness<neighboringGlow)
+                        neighboringGlow=brightness;
+                }
+            }
+            if(neighboringGlow<0)return null;
+            for(int i=0;i<p.xs.length;i++) {
+                if(p.ys[i]!=py)continue;
+                float xx=frame.left+(col+p.xs[i]+.5f)*cell;
+                float yy=frame.top+(targetRow+.32f)*cell;
+                int face=current.at(xx,yy),old=before.at(xx,yy);
+                if(!previewMaterial(face,held.color)||
+                   Recognizer.distance(face,old)<=60||
+                   Recognizer.hi(face)<neighboringGlow+23)return null;
+            }
+            witnessedRows++;
+        }
+        return witnessedRows==2?new Origin(targetX,targetY,.92f):null;
+    }
     /** A game-specific finger lift may put the held shape over the board.
      * Search the visible height; every cell center must be newly rendered so
      * unchanged same-color board/tray cells cannot complete a false match. */
