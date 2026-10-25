@@ -180,9 +180,15 @@ public final class DragAlignment {
         // historical maxX=fingerX+cell=496 clipped away a valid moving
         // shape. First scan the fast, historical window, then only widen if
         // it was empty. Shape uniqueness and motion proof are still required.
-        List<Origin> near=stagedCandidates(im,before,frame,shape,fingerX,fingerY,false,allowThumbnailOverlap);
+        // The strict normal path first checks the fast nearby window.
+        // Retry-with-overlap MUST inspect the entire allowed region:
+        // accepting a single nearby shape while an indistinguishable second
+        // copy is farther right would break the required uniqueness proof.
+        if(allowThumbnailOverlap)
+            return stagedCandidates(im,before,frame,shape,fingerX,fingerY,true,true);
+        List<Origin> near=stagedCandidates(im,before,frame,shape,fingerX,fingerY,false,false);
         return near.isEmpty()
-            ? stagedCandidates(im,before,frame,shape,fingerX,fingerY,true,allowThumbnailOverlap)
+            ? stagedCandidates(im,before,frame,shape,fingerX,fingerY,true,false)
             : near;
     }
     private static List<Origin> stagedCandidates(Game.Image im,Game.Image before,Game.Frame frame,Game.Shape shape,float fingerX,float fingerY,boolean expanded,boolean allowThumbnailOverlap) {
