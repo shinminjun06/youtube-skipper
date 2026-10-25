@@ -95,6 +95,7 @@ class CaptureService : Service() {
     /** Start at v1.4.2-safe speed; accelerate only after verified clean moves. */
     private val pace = AdaptivePace()
     private var usedBoardOverlapRecovery = false
+    private var blindReacquisitionMoves=0
     private var lastBoardOverlapShape: String? = null
     private var usedComboClearPreview = false
     private var usedLineGlowPreview = false
@@ -189,6 +190,7 @@ class CaptureService : Service() {
             lastCorrectionOrigin=null
             lastServoFailureDetail=null
             usedBoardOverlapRecovery=false
+            blindReacquisitionMoves=0
             lastBoardOverlapShape=null
             usedComboClearPreview=false
             usedLineGlowPreview=false
@@ -396,6 +398,7 @@ class CaptureService : Service() {
         }
         before = frame; beforeImage = image; probeImage = null
         pendingDragSample=null
+        blindReacquisitionMoves=0
         usedBoardOverlapRecovery=false
         lastBoardOverlapShape=null
         usedComboClearPreview=false
@@ -575,11 +578,19 @@ class CaptureService : Service() {
         // Diagnostic (13)/(17): a moving colored piece can overlay ONE
         // existing SAME-COLOR occupied BOARD cell. Normal tracking first.
         // This fallback is correction-only, never sufficient to release.
-        val occupiedBoardRecovery=if(phase==Phase.ALIGN && regularHeld==null &&
-                targetMatch==null && stackedPreview==null &&
-                !directDragUsed && corrections>=1)
-            DragAlignment.locateOverOccupiedBoard(image,beforeImage!!,frame,
-                shape,fingerX,fingerY)
+        // General temporal re-acquisition BEFORE legacy one/two-cell
+        // shape-specific exceptions. This is correction-only evidence.
+        val temporalOverlap=if(phase==Phase.ALIGN && regularHeld==null &&
+                targetMatch==null && stackedPreview==null)
+            DragAlignment.locateTemporalBoardOverlap(
+                image,beforeImage!!,frame,shape,fingerX,fingerY)
+            else null
+        val occupiedBoardRecovery=if(temporalOverlap!=null) temporalOverlap
+            else if(phase==Phase.ALIGN && regularHeld==null &&
+                    targetMatch==null && stackedPreview==null &&
+                    !directDragUsed && corrections>=1)
+                DragAlignment.locateOverOccupiedBoard(image,beforeImage!!,frame,
+                    shape,fingerX,fingerY)
             else null
         // Diag (14): only a three-line-clear preview from an exact red L,
         // including its distinctive bright face over the dim line-glow,
@@ -703,6 +714,34 @@ class CaptureService : Service() {
                         true,pace.retryMs().toLong(),done)
                 }
                 return
+            }
+            // Occlusion after verified pickup is not evidence of a dropped
+            // block. Two bounded continuing gestures alter the background;
+            // neither can release, calibrate, or verify the move.
+            if(phase==Phase.ALIGN && now-phaseAt>900 &&
+                    blindReacquisitionMoves<2) {
+                val nudge=RecoveryNudge.plan(frame,fingerX,fingerY,
+                    blindReacquisitionMoves)
+                if(nudge!=null) {
+                    blindReacquisitionMoves++
+                    pace.uncertainty()
+                    lastCorrectionOrigin=null
+                    lastCorrectionTrusted=false
+                    trustedHeldOrigin=null
+                    fingerX+=nudge[0];fingerY+=nudge[1]
+                    android.util.Log.w("BlockBlastAuto",
+                        "OCCLUSION_REACQUIRE no-release="+
+                        blindReacquisitionMoves+" step="+
+                        nudge[0]+","+nudge[1])
+                    status("가려진 블록 재인식 · 안전 이동 "+
+                        blindReacquisitionMoves+"/2")
+                    gesture(epoch,Phase.ALIGN) { service,done ->
+                        service.moveHeld(fingerX*scaleX(frame),
+                            fingerY*scaleY(frame),true,
+                            pace.retryMs().toLong(),done)
+                    }
+                    return
+                }
             }
             if (now-phaseAt > 2200) {
                 freezeFailure(image,"NO_HELD_MATCH")
@@ -870,6 +909,7 @@ class CaptureService : Service() {
             .put("observedOriginY",observed?.y ?: JSONObject.NULL)
             .put("servoFailureDetail",lastServoFailureDetail ?: JSONObject.NULL)
             .put("usedBoardOverlapRecovery",usedBoardOverlapRecovery)
+            .put("blindReacquisitionMoves",blindReacquisitionMoves)
             .put("boardOverlapShape",lastBoardOverlapShape ?: JSONObject.NULL)
             .put("roiTightMatches",roiTightMatches)
             .put("roiWideMatches",roiWideMatches)
