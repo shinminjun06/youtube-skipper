@@ -102,6 +102,10 @@ class AutoService : AccessibilityService() {
                         true
                     }
                     MotionEvent.ACTION_MOVE -> {
+                        // While auto input is running the dock must remain
+                        // outside the board/lift path. The stop tap still works.
+                        if(autoDock && CaptureService.active?.isRunning()==true)
+                            return@setOnTouchListener true
                         val dx=event.rawX-downX; val dy=event.rawY-downY
                         if(abs(dx)>slop || abs(dy)>slop) moved=true
                         if(moved) {
@@ -193,6 +197,7 @@ class AutoService : AccessibilityService() {
     fun setRunning(value: Boolean) { main.post {
         toggleButton?.text=if (value) "■ 중지" else "▶ 시작"
         modeButton?.isEnabled=!value
+        floating?.post { dockControls(autoDock) }
     } }
     /** Automatic play docks controls below the tray, never above the board. */
     private fun dockControls(automatic: Boolean) {
@@ -215,7 +220,12 @@ class AutoService : AccessibilityService() {
         modeButton?.text=if (value) "모드: 자동" else "모드: 추천"
         dockControls(value)
     } }
-    fun setStatus(value: String) { main.post { statusText?.text = value } }
+    fun setStatus(value: String) { main.post {
+        statusText?.text=value
+        // A status change may increase panel height. Keep its bottom edge
+        // anchored BELOW the playing area even after layout has remeasured.
+        if(autoDock) floating?.post {dockControls(true)}
+    } }
 
     fun beginDrag(sx: Float,sy: Float,tx: Float,ty: Float,expectedApp: String?,done: (Boolean)->Unit) {
         check(Looper.myLooper() == Looper.getMainLooper())
@@ -226,7 +236,7 @@ class AutoService : AccessibilityService() {
         if (expectedApp != null && actualApp != null && actualApp != expectedApp) { lastGestureError = "다른 앱이 앞에 있음"; done(false); return }
         fingerX = sx; fingerY = sy
         session++
-        main.removeCallbacks(watchdog); main.postDelayed(watchdog,9000)
+        main.removeCallbacks(watchdog); main.postDelayed(watchdog,14500)
         val pickup = GestureDescription.StrokeDescription(Path().apply { moveTo(sx,sy) },0,160,true)
         send(pickup,sx,sy) { ok ->
             if (ok) moveHeld(tx,ty,true,500,done) else done(false)
