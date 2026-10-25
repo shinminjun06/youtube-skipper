@@ -67,6 +67,7 @@ class AutoplayDeviceTest {
                 ?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
         }
         await("projection service") { CaptureService.active!=null }
+        instrumentation.runOnMainSync { CaptureService.active!!.setAutomatic(true) }
         instrumentation.startActivitySync(Intent(context,TouchFixtureActivity::class.java).putExtra("dark",dark).putExtra("plated",plated).putExtra("lift",lift).putExtra("ignorePickup",ignorePickup).putExtra("preview",preview).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         Thread.sleep(800)
         instrumentation.runOnMainSync { CaptureService.active!!.toggle() }
