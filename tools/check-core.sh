@@ -53,7 +53,7 @@ if ! grep -Fq 'params.gravity=if(automatic) Gravity.BOTTOM or Gravity.END' app/s
   echo 'FAIL: floating controls can obscure held blocks in auto mode' >&2
   exit 1
 fi
-if ! grep -Fq 'val stepY=DragStep.axis(dy,frame.cell)' app/src/main/java/com/pivotry/blockauto/CaptureService.kt; then
+if ! grep -Fq 'val stepY=DragCalibration.correction(dy,frame.cell)' app/src/main/java/com/pivotry/blockauto/CaptureService.kt; then
   echo 'FAIL: bounded held-block position correction missing' >&2
   exit 1
 fi
@@ -76,5 +76,21 @@ if ! grep -Fq 'guideView?.visibility=if(hide) View.INVISIBLE else View.VISIBLE' 
 fi
 if ! grep -Fq 'val x=if(visible)' app/src/main/java/com/pivotry/blockauto/AutoService.kt; then
   echo 'FAIL: cancelling a hidden pointer could tap through to the game' >&2
+  exit 1
+fi
+
+# Hybrid drag: only a successfully verified board transition may
+# upgrade the normalized screen/slot model; direct gestures must remain
+# held until the strict final target-preview check authorizes release.
+if ! grep -Fq 'if(dragCalibration.recordVerified(sample))' app/src/main/java/com/pivotry/blockauto/CaptureService.kt; then
+  echo 'FAIL: calibration update must be linked to independently verified placement' >&2
+  exit 1
+fi
+if ! grep -Fq 'dragCalibration.predict(shape.slot,shape.piece,frame.cell' app/src/main/java/com/pivotry/blockauto/CaptureService.kt; then
+  echo 'FAIL: verified-only fast path not wired into controller' >&2
+  exit 1
+fi
+if ! grep -Fq 'if (phase == Phase.ALIGN && snappedToTarget)' app/src/main/java/com/pivotry/blockauto/CaptureService.kt; then
+  echo 'FAIL: strictly verified release gate missing' >&2
   exit 1
 fi
