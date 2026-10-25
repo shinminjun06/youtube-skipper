@@ -1070,6 +1070,62 @@ public final class CoreChecks {
      * sprite beyond right edge, leaving a clipped last screenshot and
      * causing ALIGN/NO_HELD_MATCH. Probe was deliberately horizontal.
      */
+    static void diagnostic11StackedPreviewRegression() {
+        // Field evidence: 720x1560 / cell 79.875, a cyan 1x4 preview
+        // at board column 4 row 0 and a separate held 1x4 immediately
+        // below that preview, at the actual finger ~386,836.
+        int w=720,h=1560;
+        int background=0xff212852,face=0xff21aede,shade=0xff006da4;
+        int[] base=new int[w*h];Arrays.fill(base,background);
+        Game.Image before=new Game.Image(w,h,base);
+        int[] moving=base.clone();
+        float cell=79.875f,left=41f,top=368f;
+        Game.Piece vertical=new Game.Piece(0,0,0,1,0,2,0,3);
+        Game.Shape selected=new Game.Shape(1,vertical,359.5f,1173.5f,0xff31b6e6);
+        Game.Frame frame=new Game.Frame(0L,Arrays.asList(selected),
+            left,top,cell,w,h,1f);
+        // Approximate the actual beveled face: the top is bright but
+        // the lower half is deeply shaded yet still has the cyan hue.
+        for(int j=0;j<8;j++)for(int dy=0;dy<80;dy++) {
+            int y=350+j*80+dy;
+            if(y<0||y>=h)continue;
+            for(int x=358;x<438;x++)moving[y*w+x]=dy<52?face:shade;
+        }
+        Game.Image stacked=new Game.Image(w,h,moving);
+        float tx=left+4*cell,ty=top;
+        check(DragAlignment.targetCellPreview(stacked,before,frame,selected,4,0),
+            "actual 4-cell cyan target preview accepts genuine beveled dark face");
+        DragAlignment.Origin verified=DragAlignment.locateHeldBelowSnappedPreview(
+            stacked,before,frame,selected,tx,ty,386f,835f);
+        check(verified!=null && Math.abs(verified.x-tx)<.01f &&
+            Math.abs(verified.y-ty)<.01f,
+            "stacked preview + held-finger material gives restricted grid proxy");
+        check(DragAlignment.locateHeldBelowSnappedPreview(
+            stacked,before,frame,selected,tx,ty,650f,835f)==null,
+            "unrelated finger column cannot authorize a snapped preview");
+        check(DragAlignment.locateHeldBelowSnappedPreview(
+            stacked,before,frame,selected,tx,ty,386f,650f)==null,
+            "preview without a separately held sprite below cannot authorize release");
+        Game.Image stale=new Game.Image(w,h,moving);
+        check(!DragAlignment.targetCellPreview(stale,stacked,frame,selected,4,0),
+            "stale identical pixels cannot be new target evidence");
+        int[] missing=moving.clone();
+        for(int y=350+80*2;y<350+80*3;y++)for(int x=358;x<438;x++)
+            missing[y*w+x]=background;
+        Game.Image gap=new Game.Image(w,h,missing);
+        check(!DragAlignment.targetCellPreview(gap,before,frame,selected,4,0),
+            "one missing target square must reject the stacked preview");
+        int[] wrong=moving.clone();
+        for(int y=350;y<350+80*4;y++)for(int x=358;x<438;x++)
+            wrong[y*w+x]=0xffdf3434;
+        Game.Image wrongColor=new Game.Image(w,h,wrong);
+        check(!DragAlignment.targetCellPreview(wrongColor,before,frame,selected,4,0),
+            "wrong hue never counts as the selected cyan block");
+        check(DragAlignment.locateHeldBelowSnappedPreview(
+            wrongColor,before,frame,selected,tx,ty,386f,835f)==null,
+            "nearby held material alone cannot replace complete target proof");
+    }
+
     static void measuredSpriteResponseRegression() {
         float cell=79.875f;
         DragResponse response=new DragResponse();
@@ -1234,6 +1290,7 @@ public final class CoreChecks {
     }
 
     public static void main(String[] args) throws Exception {
+        diagnostic11StackedPreviewRegression();
         pixelSamplerGeometryRegression();
         frameReuseSafetyRegression();
         cachedGridRecognitionRegression();

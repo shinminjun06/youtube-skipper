@@ -34,21 +34,94 @@ public final class DragAlignment {
             float top=frame.top+(row+held.piece.ys[i])*cell;
             // Four interior probes for EACH requested square. A piece one
             // column/row away cannot satisfy the absent edge-column probes.
-            int matched=0;
+            int matched=0,bright=0;
             for(float oy:new float[]{.39f,.61f})for(float ox:new float[]{.39f,.61f}) {
                 int px= Math.round(left+ox*cell), py=Math.round(top+oy*cell);
                 if(px<0||py<0||px>=current.width||py>=current.height)continue;
                 int now=current.pixels[py*current.width+px];
                 int was=before.pixels[py*before.width+px];
-                if(same(now,held.color) && Recognizer.distance(now,was)>60)matched++;
+                if(previewMaterial(now,held.color) && Recognizer.distance(now,was)>60) {
+                    matched++;
+                    if(same(now,held.color))bright++;
+                }
             }
-            if(matched<4)return false;
+            // Each square needs complete, newly changed material AND
+            // at least two strict bright-face pixels. Dark beveled halves
+            // alone cannot turn an unrelated background into a preview.
+            if(matched<4 || bright<2)return false;
         }
         return true;
     }
 
     private static boolean same(int c,int target) {
         return Recognizer.isTile(c)&&Recognizer.hi(c)>Recognizer.hi(target)*.78f&&Recognizer.distance(c,target)<125;
+    }
+    /** The face may have a dark beveled lower half. This is ONLY used as
+     * supplementary evidence alongside strict bright-face probes. */
+    private static boolean previewMaterial(int c,int target) {
+        if(same(c,target))return true;
+        if(!Recognizer.isTile(c)||Recognizer.hi(c)<Recognizer.hi(target)*.48f)return false;
+        return hueDistance(c,target)<.21f;
+    }
+    private static float hue(int c) {
+        int r=Recognizer.r(c),g=Recognizer.g(c),b=Recognizer.b(c);
+        int max=Math.max(r,Math.max(g,b)),min=Math.min(r,Math.min(g,b));
+        if(max==min)return -1f;
+        float h=max==r?(g-b)/(float)(max-min):
+            max==g?2f+(b-r)/(float)(max-min):4f+(r-g)/(float)(max-min);
+        return h<0?h+6f:h;
+    }
+    private static float hueDistance(int a,int b) {
+        float x=hue(a),y=hue(b);
+        if(x<0||y<0)return Float.MAX_VALUE;
+        float d=Math.abs(x-y);
+        return Math.min(d,6f-d);
+    }
+
+    /**
+     * v1.4.5 diagnostic (11): cyan 1x4 is projected in its top four target
+     * cells while the genuinely held 1x4 is rendered directly BELOW it.
+     * Their identical columns form eight apparent tiles, defeating the
+     * standalone full-shape tracker. This narrowly scoped fallback requires
+     * BOTH an entire legal, newly colored target preview and independent
+     * fresh cyan face evidence at the actual held finger. It is a grid
+     * preview proxy, never a measured moving-sprite origin: callers MUST
+     * NOT train gesture calibration from it. Must remain stable across frames
+     * and pass the independent post-release board+tray verifier.
+     */
+    public static Origin locateHeldBelowSnappedPreview(Game.Image current,
+            Game.Image before,Game.Frame frame,Game.Shape held,
+            float targetX,float targetY,float fingerX,float fingerY) {
+        if(current==null||before==null||frame==null||held==null ||
+           current.width!=before.width||current.height!=before.height||
+           held.piece.w!=1||held.piece.h<3||held.piece.h>5||
+           !Float.isFinite(fingerX)||!Float.isFinite(fingerY))return null;
+        float cell=frame.cell;
+        if(!Float.isFinite(cell)||cell<=10f)return null;
+        if(Math.abs(fingerX-(targetX+cell*.5f))>cell*.85f)return null;
+        float end=targetY+held.piece.h*cell;
+        // Guard against an old tray thumbnail or an unrelated blue tile.
+        if(fingerY<end+cell*.15f || fingerY>end+cell*3.0f)return null;
+        if(fingerX<cell*.15f||fingerX>=current.width-cell*.15f||
+           fingerY<cell*.15f||fingerY>=current.height-cell*.15f)return null;
+        int col=Math.round((targetX-frame.left)/cell);
+        int row=Math.round((targetY-frame.top)/cell);
+        if(Math.abs(frame.left+col*cell-targetX)>cell*.06f||
+           Math.abs(frame.top+row*cell-targetY)>cell*.06f)return null;
+        if(!targetCellPreview(current,before,frame,held,col,row))return null;
+        int count=0,bright=0;
+        for(float dy:new float[]{-.12f,.12f})for(float dx:new float[]{-.12f,.12f}) {
+            float x=fingerX+dx*cell,y=fingerY+dy*cell;
+            int c=current.at(x,y),was=before.at(x,y);
+            if(previewMaterial(c,held.color)&&Recognizer.distance(c,was)>60) {
+                count++;
+                if(same(c,held.color))bright++;
+            }
+        }
+        // A dark shade is valid only because the target cells separately
+        // passed the full bright+dark test above. Require all finger pixels.
+        if(count!=4)return null;
+        return new Origin(targetX,targetY,.9f);
     }
     private static float score(Game.Image im,Game.Image before,Game.Piece p,int color,float x,float y,float cell,float minNovel,boolean changedCenters) {
         int hits=0,total=0,novel=0,edges=0,clean=0;

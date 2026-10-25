@@ -490,8 +490,18 @@ class CaptureService : Service() {
                 frame,shape,fingerX,fingerY,probeDX,probeDY)
             else null
         val pickupMotion=directed ?: sourceOverlapRecovery
+        // When the bright/dark board preview and the real sprite stack in one
+        // column, an ordinary whole-shape search may lose uniqueness. Only
+        // staged vertical bars with a verified earlier pickup, correction
+        // attempt, complete target preview AND held-finger material evidence
+        // may use the target grid as a stable preview proxy.
+        val stackedPreview=if(phase==Phase.ALIGN && targetMatch==null &&
+                !directDragUsed && corrections>=1)
+            DragAlignment.locateHeldBelowSnappedPreview(image,beforeImage!!,frame,
+                shape,targetX,targetY,fingerX,fingerY)
+            else null
         val found=if(phase==Phase.PICKED) pickupMotion?.latest
-            else targetMatch ?: DragAlignment.locate(image,beforeImage!!,frame,shape,fingerX,fingerY)
+            else targetMatch ?: stackedPreview ?: DragAlignment.locate(image,beforeImage!!,frame,shape,fingerX,fingerY)
         if(sourceOverlapRecovery!=null)
             android.util.Log.i("BlockBlastAuto","pickup confirmed with selected-tray source mask; "+
                 "directed unique shape at "+sourceOverlapRecovery.latest.x+","+sourceOverlapRecovery.latest.y)
@@ -576,7 +586,7 @@ class CaptureService : Service() {
         // Recovery-only tracking is NEVER sufficient for a release.
         val targetColumn=kotlin.math.round((targetX-frame.left)/frame.cell).toInt()
         val targetRow=kotlin.math.round((targetY-frame.top)/frame.cell).toInt()
-        val targetCellsMatch=phase==Phase.ALIGN && targetMatch!=null &&
+        val targetCellsMatch=phase==Phase.ALIGN && (targetMatch!=null || stackedPreview!=null) &&
             DragAlignment.targetCellPreview(image,beforeImage!!,frame,shape,targetColumn,targetRow)
         val snappedToTarget=targetCellsMatch && abs(dx)<frame.cell*.32f &&
             abs(dy)<frame.cell*.32f
@@ -584,7 +594,14 @@ class CaptureService : Service() {
             // Capture a learning candidate, NOT a confirmed sample.
             // It is committed ONLY if MoveVerifier proves the expected
             // board and consumed tray slot after the pointer is released.
-            pendingDragSample=DragCalibration.Observation(shape.slot,shape.piece.key,
+            // A stacked-preview proxy is NOT the genuine moving sprite
+            // coordinate, so it must NEVER update finger-to-sprite calibration.
+            if(stackedPreview!=null) {
+                pendingDragSample=null
+                pace.uncertainty()
+                android.util.Log.i("BlockBlastAuto",
+                    "STACKED_PREVIEW strict target+finger material verified; no calibration")
+            } else pendingDragSample=DragCalibration.Observation(shape.slot,shape.piece.key,
                 shape.piece.w,shape.piece.h,frame.cell,
                 fingerX,fingerY,found.x,found.y)
             status("목표 칸 미리보기 확인 · 블록 놓기")
