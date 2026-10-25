@@ -82,10 +82,28 @@ public final class DragResponse {
         // Prevent any command likely to hide a cell beyond either screen edge.
         float right=width-pieceWidth*cell-pad;
         float bottom=height-pieceHeight*cell-pad;
-        if(originX<pad || originX>right || originY<pad || originY>bottom)
-            throw new IllegalArgumentException("Already clipped sprite cannot be steered blindly");
+        // A pixel-tracked origin can sit just outside the strict inset when
+        // the sprite is at the edge. Do not abort for a tiny, uniquely tracked
+        // overhang if the requested correction explicitly returns it INWARD.
+        // Larger clipping or any outward correction remains a hard stop.
+        // Importantly, this never authorizes release: ALIGN still requires
+        // stable target-cell preview, followed by MoveVerifier after release.
+        final float smallOverhang=Math.min(16f,cell*.18f);
+        if(originX<pad-smallOverhang || originX>right+smallOverhang ||
+           originY<pad-smallOverhang || originY>bottom+smallOverhang)
+            throw new IllegalArgumentException("Sprite exceeds recoverable screen margin");
+        if((originX<pad && errorX<=0) || (originX>right && errorX>=0) ||
+           (originY<pad && errorY<=0) || (originY>bottom && errorY>=0))
+            throw new IllegalArgumentException("Correction is not directed back onscreen");
         sx=limit(sx,(pad-originX)/gainX,(right-originX)/gainX);
         sy=limit(sy,(pad-originY)/gainY,(bottom-originY)/gainY);
+        // Strict numeric clamp alone cannot bring an already marginally
+        // overhanging sprite back inside. Force a minimum inward step, then
+        // re-observe the entire shape before considering ANY further action.
+        if(originX<pad) sx=Math.max(sx,(pad+.1f-originX)/gainX);
+        else if(originX>right) sx=Math.min(sx,(right-.1f-originX)/gainX);
+        if(originY<pad) sy=Math.max(sy,(pad+.1f-originY)/gainY);
+        else if(originY>bottom) sy=Math.min(sy,(bottom-.1f-originY)/gainY);
         return new float[]{sx,sy};
     }
     private static float axis(float error,float cell,float gain){

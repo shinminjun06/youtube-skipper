@@ -85,6 +85,7 @@ class CaptureService : Service() {
     private val dragResponse = DragResponse()
     /** Start at v1.4.2-safe speed; accelerate only after verified clean moves. */
     private val pace = AdaptivePace()
+    private var lastServoFailureDetail: String? = null
     private var lastCorrectionOrigin: DragAlignment.Origin? = null
     private var lastCorrectionStepX=0f
     private var lastCorrectionStepY=0f
@@ -167,6 +168,7 @@ class CaptureService : Service() {
             dragResponse.reset()
             pace.reset()
             lastCorrectionOrigin=null
+            lastServoFailureDetail=null
             pendingDragSample=null
             directDragUsed=false; directDragCount=0; stagedDragCount=0
             verifiedDirectCount=0; verifiedStagedCount=0
@@ -600,9 +602,17 @@ class CaptureService : Service() {
             val step=try {
                 dragResponse.correction(dx,dy,found.x,found.y,
                     shape.piece.w,shape.piece.h,frame.cell,frame.width,frame.height)
-            } catch (_: IllegalArgumentException) {
+            } catch (e: IllegalArgumentException) {
+                lastServoFailureDetail=e.message
+                android.util.Log.w("BlockBlastAuto",
+                    "servo rejected reason="+e.message+
+                    " origin="+found.x+","+found.y+
+                    " target="+targetX+","+targetY+
+                    " delta="+dx+","+dy+
+                    " sprite="+shape.piece.w+"x"+shape.piece.h+
+                    " cell="+frame.cell+" screen="+frame.width+"x"+frame.height)
                 freezeFailure(image,"UNSAFE_OR_CLIPPED_SERVO_GEOMETRY")
-                halt("화면 가장자리 위치를 확실히 확인할 수 없어 안전 정지")
+                halt("블록이 화면 경계에서 안전하게 추적되지 않아 정지 · 진단 파일 저장 가능")
                 return
             }
             val stepX=step[0]; val stepY=step[1]
@@ -638,6 +648,7 @@ class CaptureService : Service() {
             .put("fingerX",fingerX).put("fingerY",fingerY).put("probeDX",probeDX).put("probeDY",probeDY).put("targetX",targetX).put("targetY",targetY)
             .put("observedOriginX",observed?.x ?: JSONObject.NULL)
             .put("observedOriginY",observed?.y ?: JSONObject.NULL)
+            .put("servoFailureDetail",lastServoFailureDetail ?: JSONObject.NULL)
             .put("pickupRetry",phase==Phase.PICKED && corrections==1)
             .put("calibratedDirectStart",directDragUsed)
             .put("exactShapeCalibrationConfidence",dragCalibration.confidence(shape.slot,shape.piece.key))

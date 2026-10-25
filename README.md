@@ -1,4 +1,4 @@
-# Block Blast Advisor + Auto v1.4.4
+# Block Blast Advisor + Auto v1.4.5
 
 Android 11+ 전용 오프라인 Block Blast Classic 게임판 분석 앱입니다. **추천 모드**와 **자동 플레이 모드**를 같은 앱에서 선택할 수 있습니다.
 
@@ -10,12 +10,21 @@ Android 11+ 전용 오프라인 Block Blast Classic 게임판 분석 앱입니�
 
 ## 사용법
 
-1. [오토플레이 전용 빌드 페이지](https://github.com/shinminjun06/youtube-skipper/actions?query=branch%3Ablockblast-autoplay-build)에서 **Build BlockBlast Advisor + Auto APK**가 초록 체크로 완료된 실행을 열고 **BlockBlastAutoPlay-apk** ZIP을 다운로드합니다. ZIP을 풀고 **BlockBlastAutoPlay-v1.4.4.apk**를 설치하세요. 구버전과 혼동하지 마세요.
-2. 홈 화면에서 **Block Blast AutoPlay** 아이콘을 실행해 **v1.4.4**이라고 표시되는지 확인합니다. 기존 **Block Blast Advisor**(v1.2)는 다른 앱으로 남아 있습니다. 기존 Advisor의 접근성 서비스를 끄고 **Block Blast AutoPlay** 접근성을 연결한 다음 **전체 화면 공유 시작**을 승인합니다.
+1. [오토플레이 전용 빌드 페이지](https://github.com/shinminjun06/youtube-skipper/actions?query=branch%3Ablockblast-autoplay-build)에서 **Build BlockBlast Advisor + Auto APK**가 초록 체크로 완료된 실행을 열고 **BlockBlastAutoPlay-apk** ZIP을 다운로드합니다. ZIP을 풀고 **BlockBlastAutoPlay-v1.4.5.apk**를 설치하세요. 구버전과 혼동하지 마세요.
+2. 홈 화면에서 **Block Blast AutoPlay** 아이콘을 실행해 **v1.4.5**이라고 표시되는지 확인합니다. 기존 **Block Blast Advisor**(v1.2)는 다른 앱으로 남아 있습니다. 기존 Advisor의 접근성 서비스를 끄고 **Block Blast AutoPlay** 접근성을 연결한 다음 **전체 화면 공유 시작**을 승인합니다.
 3. 앱 첫 화면에서 **자동 플레이 모드 선택**을 누른 뒤 Block Blast Classic의 세로 화면을 엽니다. 자동 모드에서는 하단에 고정되는 플로팅 창에서도 **모드: 추천** 또는 **모드: 자동**을 전환할 수 있습니다.
 4. **▶ 시작**을 누릅니다. 추천에서는 초록색 칸을 보고 수동으로 놓습니다. 자동에서는 플로팅 창이 사라지고, 앱이 블록을 잡고 설치를 검증합니다. 조작창이 숨겨져 있는 것은 정상입니다.
 5. **자동 플레이 중에는** Android 알림 패널의 **종료** 버튼으로 즉시 중지하세요. 중지되면 플로팅 창이 다시 나타납니다. 추천 모드에서는 기존 ■ 중지 버튼을 이용할 수 있습니다.
 6. 추적 실패 시 앱의 **위치 측정 실패 진단 파일 저장**을 이용해 원인 분석용 ZIP을 저장할 수 있습니다.
+
+## v1.4.5 — 화면 가장자리 과민 안전 중단 개선
+
+- **발생 조건**: 1.4.4에서는 움직이는 조각 외곽이 화면 경계 안쪽의 작은 안전 여백을 단 몇 픽셀이라도 넘으면 `DragResponse.correction()`이 예외를 던지고, 앱이 `화면 가장자리 위치를 확실히 확인할 수 없어 안전 정지`를 표시했습니다.
+- **이번 변경**: 정확한 전체 모양을 추적한 후 경계에서 최대 0.18칸(최대 16px)만 벗어난 경우, 목표 방향이 화면 안쪽이라면 손가락을 해당 축에서 화면 안쪽으로 이동시키는 것만 허용합니다. 새 이미지를 다시 확인하기 전에는 블록을 놓지 않습니다.
+- 과도하게 잘린 조각, 화면 바깥으로 더 이동하라는 명령, 부정확한 좌표는 종전처럼 중단합니다. 목표 칸 미리보기와 실제 배치 후 게임판/손패 검증도 그대로 둡니다.
+- 실패 진단 ZIP에 `servoFailureDetail`을 추가했고 로그에는 블록의 추적 원점, 목표 위치, 조각 크기와 화면 크기를 기록해 동일 문제가 반복되면 경계 오차와 추적 오류를 구별할 수 있게 했습니다.
+- 3×3 L자 블록의 미세한 경계 초과, 화면 위쪽 복귀, 화면 밖 방향 명령 거부, 심한 클리핑 거부를 위한 회귀 테스트를 추가했습니다.
+- 실제 사용자의 해당 중단 화면만으로 당시 움직이는 블록의 정확한 좌표까지 복원할 수는 없습니다. **개선 효과는 실기기 재시험으로 확인해야 합니다.**
 
 ## v1.4.4 — 안전하게 게임판 격자 재탐색 줄이기
 

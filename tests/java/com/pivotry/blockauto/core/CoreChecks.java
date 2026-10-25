@@ -1087,6 +1087,28 @@ public final class CoreChecks {
         catch(IllegalArgumentException expected){badRejected=true;}
         check(badRejected,"already clipped sprite must safely stop instead of blindly moving");
 
+        // User screenshot regression: a 3x3 L may be tracked a few pixels
+        // beyond the strict inset, even though most of the shape is visible.
+        // Only a provably inward held-pointer correction is permitted.
+        float c=80f,margin=Math.max(2f,c*.04f);
+        float rightEdge=width-3*c-margin;
+        float atRight=rightEdge+9f;
+        float[] inward=response.correction(-70,0,atRight,1100,3,3,c,width,height);
+        check(inward[0]<0 && atRight+response.gainX()*inward[0]<rightEdge,
+            "slightly overhanging right-edge L must recover inward while held");
+        float[] topRecovery=response.correction(0,50,200,-5,3,3,c,width,height);
+        check(topRecovery[1]>0 &&
+              -5+response.gainY()*topRecovery[1]>margin,
+            "slightly overhanging top edge recovers inward without releasing");
+        boolean outwardRejected=false;
+        try{response.correction(+70,0,atRight,1100,3,3,c,width,height);}
+        catch(IllegalArgumentException expected){outwardRejected=true;}
+        check(outwardRejected,"edge recovery must NEVER continue outward");
+        boolean deepClipRejected=false;
+        try{response.correction(-70,0,rightEdge+25,1100,3,3,c,width,height);}
+        catch(IllegalArgumentException expected){deepClipRejected=true;}
+        check(deepClipRejected,"significantly clipped L remains a hard safety stop");
+
         response.reset();
         check(!response.measured() &&
             Math.abs(response.gainX()-1.45f)<.001f,
