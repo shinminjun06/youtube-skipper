@@ -1107,11 +1107,21 @@ public final class CoreChecks {
         check(DragAlignment.locateOverOccupiedBoard(
             unchanged,before,frame,selected,402.16f,1043.75f)==null,
             "static board square cannot masquerade as a held 2x3");
-        Game.Image second=lifted(before,frame,selected,150,671);
-        Game.Image twoCandidates=lifted(second,frame,selected,371,671);
+        // Duplicate becomes genuinely ambiguous only if BOTH candidates
+        // have their own old occupied same-color board center. A duplicate
+        // that is fully new (no board overlap) must not be mistaken for a
+        // valid overlap-recovery candidate.
+        int[] bothOld=old.clone();
+        for(int y=687;y<764;y++)for(int x=123;x<201;x++)
+            bothOld[y*w+x]=green;
+        Game.Image beforeTwo=new Game.Image(w,h,bothOld);
+        Game.Frame twoBoard=new Game.Frame(
+            board|(1L<<(4*8+1)),frame.shapes,43,368,cell,w,h,1);
+        Game.Image second=lifted(beforeTwo,twoBoard,selected,133,671);
+        Game.Image twoCandidates=lifted(second,twoBoard,selected,371,671);
         check(DragAlignment.locateOverOccupiedBoard(
-            twoCandidates,before,frame,selected,402.16f,1043.75f)==null,
-            "ambiguous duplicate held green rectangles cannot be accepted");
+            twoCandidates,beforeTwo,twoBoard,selected,402.16f,1043.75f)==null,
+            "two equally plausible occupied-board-overlap green shapes must be rejected");
         int[] missing=moved.pixels.clone();
         for(int y=830;y<907;y++)for(int x=450;x<527;x++)
             missing[y*w+x]=bg;
