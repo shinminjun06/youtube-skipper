@@ -767,13 +767,19 @@ class CaptureService : Service() {
             // board and consumed tray slot after the pointer is released.
             // A stacked-preview proxy is NOT the genuine moving sprite
             // coordinate, so it must NEVER update finger-to-sprite calibration.
-            if(stackedPreview!=null || usedBoardOverlapRecovery ||
-                    comboClearPreview!=null || lineGlowPreview!=null ||
-                    usedBevelZigzagRecovery) {
+            // Only a physically measured, strictly target-local sprite can
+            // train calibration. A snapped line-clear preview is a GRID proxy
+            // (including the blue diagonal case), not the actual sprite
+            // coordinate. Keep this strict gate for all future recovery types.
+            val usedRecoveryProxy=usedBoardOverlapRecovery ||
+                usedComboClearPreview || usedLineGlowPreview ||
+                usedDiagonalLineClearPreview || usedBevelZigzagRecovery
+            if(!DragCalibration.mayRecordVerifiedTargetSample(
+                    targetMatch!=null,usedRecoveryProxy)) {
                 pendingDragSample=null
                 pace.uncertainty()
                 android.util.Log.i("BlockBlastAuto",
-                    "STACKED_PREVIEW strict target+finger material verified; no calibration")
+                    "PREVIEW_PROXY placement verified visually; motor calibration disabled")
             } else pendingDragSample=DragCalibration.Observation(shape.slot,shape.piece.key,
                 shape.piece.w,shape.piece.h,frame.cell,
                 fingerX,fingerY,found.x,found.y)

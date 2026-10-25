@@ -1648,6 +1648,18 @@ public final class CoreChecks {
         check(pace.tier()==AdaptivePace.Tier.BASE,"new session cannot inherit old fast mode");
     }
 
+    /** Diagnostic 18: no grid-preview coordinate can poison direct calibration. */
+    static void diagnostic18ProxyCalibrationRegression() {
+        check(DragCalibration.mayRecordVerifiedTargetSample(true,false),
+            "strict physical target observations remain eligible for verified learning");
+        check(!DragCalibration.mayRecordVerifiedTargetSample(false,false),
+            "diagnostic18 blue diagonal preview is NOT a sprite-origin measurement");
+        check(!DragCalibration.mayRecordVerifiedTargetSample(false,true),
+            "all release-only grid proxies are excluded from motor calibration");
+        check(!DragCalibration.mayRecordVerifiedTargetSample(true,true),
+            "a previous uncertain recovery also blocks later sample learning");
+    }
+
     /** Diagnostic 18: clear-row BLUE glow hides a two-cell diagonal. */
     static void diagnostic18BlueDiagonalLineClearRegression() {
         final int width=720,height=1560,blue=0xff4265de;
@@ -1674,6 +1686,21 @@ public final class CoreChecks {
             paintDiagnostic18Tile(active,width,left,top,cell,x,row,blue);
         paintDiagnostic18Tile(active,width,left,top,cell,col,row+1,blue);
         Game.Image held=new Game.Image(width,height,active);
+        // The uploaded 720x1560 diagnostic has RGB(58,89,222) blue row
+        // glow, RGB(66,101,230) tile faces and RGB(49,85,222) bevels.
+        // Test those actual sampled colors, not only ideal flat blue.
+        int[] screenshotPalette=original.clone();
+        for(int x=0;x<8;x++)
+            paintDiagnostic18Tile(screenshotPalette,width,left,top,cell,
+                x,row,0xff3a59de);
+        paintDiagnostic18Tile(screenshotPalette,width,left,top,cell,
+            col+1,row,0xff4265e6);
+        paintDiagnostic18Tile(screenshotPalette,width,left,top,cell,
+            col,row+1,0xff4265e6);
+        check(DragAlignment.locateDiagonalLineClearPreview(
+            new Game.Image(width,height,screenshotPalette),before,frame,
+            shape,tx,ty,254f,904f)!=null,
+            "diag18 realistic blue row+tail palette is a guarded release proxy");
         check(Rules.place(board,piece,col,row)!=null&&
               Rules.place(board,piece,col,row).lines==1,
               "diag18 requires legal exactly-one-row-clear input");
@@ -1719,6 +1746,7 @@ public final class CoreChecks {
     }
 
     public static void main(String[] args) throws Exception {
+        diagnostic18ProxyCalibrationRegression();
         diagnostic18BlueDiagonalLineClearRegression();
         predictiveHeldRoiRegression();
         diagnostic17PurpleShiftedBoardOverlap();

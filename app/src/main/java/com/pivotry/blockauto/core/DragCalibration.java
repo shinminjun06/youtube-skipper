@@ -36,6 +36,17 @@ public final class DragCalibration {
             this(slot,"UNKEYED",width,height,cell,fingerX,fingerY,pieceX,pieceY);
         }
     }
+    /**
+     * A stable legal grid preview can authorize a guarded placement, but it
+     * never measures the dragged sprite origin. Keep predicted/direct mode
+     * learning limited to true strict physical target-local observations.
+     * Earlier fallback/proxy sightings invalidate a calibration candidate,
+     * even if a later target observation appears trustworthy.
+     */
+    public static boolean mayRecordVerifiedTargetSample(
+            boolean strictPhysicalTargetMatch, boolean usedRecoveryProxy) {
+        return strictPhysicalTargetMatch && !usedRecoveryProxy;
+    }
     private static final class Estimate {
         float normalizedX,normalizedY,cell;
         int agreements;
