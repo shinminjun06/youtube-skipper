@@ -94,13 +94,29 @@ public final class DragAlignment {
      * from stationary or whole-cell-snapped previews. Ambiguity never releases. */
     public static Origin locateMoving(Game.Image im,Game.Image before,Game.Image previous,Game.Frame frame,Game.Shape shape,
             float fingerX,float fingerY,float dx,float dy) {
+        Motion motion=locateMovingEvidence(im,before,previous,frame,shape,fingerX,fingerY,dx,dy);
+        return motion==null?null:motion.latest;
+    }
+    /** Origin and measured displacement from the SAME verified before/after
+     * sprite pair. This avoids inferring motor gain from finger offsets or
+     * unverified color matches and reuses the existing strict uniqueness proof.
+     */
+    public static final class Motion {
+        public final Origin latest;
+        public final float movedX,movedY;
+        Motion(Origin latest,float mx,float my){
+            this.latest=latest;this.movedX=mx;this.movedY=my;
+        }
+    }
+    public static Motion locateMovingEvidence(Game.Image im,Game.Image before,Game.Image previous,Game.Frame frame,Game.Shape shape,
+            float fingerX,float fingerY,float dx,float dy) {
         if(im.width!=previous.width||im.height!=previous.height)return null;
         List<Origin> now=stagedCandidates(im,before,frame,shape,fingerX,fingerY);
         List<Origin> old=stagedCandidates(previous,before,frame,shape,fingerX-dx,fingerY-dy);
         // Drag rendering can be delayed by a frame and can quantize to grid
         // pixels. Compare actual displacement with the commanded probe rather
         // than requiring nearly exact sub-pixel movement.
-        Origin selected=null;
+        Motion selected=null;
         float bestError=Float.MAX_VALUE;
         float secondError=Float.MAX_VALUE;
         for(Origin n:now) for(Origin o:old) {
@@ -122,7 +138,7 @@ public final class DragAlignment {
             if(error<bestError) {
                 secondError=bestError;
                 bestError=error;
-                selected=n;
+                selected=new Motion(n,movedX,movedY);
             } else if(error<secondError)secondError=error;
         }
         // Multiple equally plausible matches are unsafe: do not release.
