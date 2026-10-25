@@ -40,6 +40,7 @@ class CaptureService : Service() {
         automatic=enable
         getSharedPreferences("play_mode",MODE_PRIVATE).edit().putBoolean("auto",enable).apply()
         AutoService.live?.setAutomatic(enable)
+        worker.post {lastRecommendedSignature=""}
         status(if(enable) "자동 플레이 모드 · ▶ 시작" else "하이라이트 추천 모드 · ▶ 시작")
     }
     @Volatile private var destroyed = false
@@ -55,6 +56,9 @@ class CaptureService : Service() {
     private var phaseAt = 0L
     private var stableSignature = ""
     private var stableAt = 0L
+    private var lastRecommendedSignature=""
+    private var lastRecommendedCombo=-1
+    private var lastRecommendedMisses=-1
     private var before: Game.Frame? = null
     private var beforeImage: Game.Image? = null
     private var probeImage: Game.Image? = null
@@ -135,7 +139,7 @@ class CaptureService : Service() {
         worker.post {
             if (!valid(epoch)) return@post
             phase = Phase.IDLE; inFlight = false; beforeImage = null; probeImage = null; before = null; verifier = null; failureTrace = null
-            stableSignature = ""; observed = null; retries = 0; retrySignature = ""; noForegroundSince = 0L
+            stableSignature = ""; lastRecommendedSignature=""; observed = null; retries = 0; retrySignature = ""; noForegroundSince = 0L
             scoreTracker.reset()
             observedCombo=-1; observedComboAt=0L; boardTop=0f; boardCell=0f
             actionFloor = Long.MIN_VALUE; phaseAt = SystemClock.uptimeMillis()
@@ -216,6 +220,7 @@ class CaptureService : Service() {
                 lastDetectionCode = code
                 android.util.Log.i("BlockBlastAuto","recognition " + code + " image=" + image.width + "x" + image.height)
             }
+            lastRecommendedSignature=""
             if (phase == Phase.VERIFY && now-phaseAt > 3500) halt("설치 확인 중단 · " + recognitionMessage(detection))
             else if (phase == Phase.IDLE) { stableSignature = ""; status(recognitionMessage(detection)) }
             return
@@ -235,7 +240,7 @@ class CaptureService : Service() {
             }
             return
         }
-        if (frame.shapes.isEmpty()) { AutoService.live?.clearGuide(); stableSignature = ""; status("블록 대기 중 또는 게임 종료"); return }
+        if (frame.shapes.isEmpty()) { AutoService.live?.clearGuide(); lastRecommendedSignature=""; stableSignature = ""; status("블록 대기 중 또는 게임 종료"); return }
         if (!stable(frame.signature(),now)) { status("판·블록 " + frame.shapes.size + "개 확인 · 화면 안정화 중"); return }
         // SurfaceView-based games can expose no accessibility root.
         // Stable visual recognition may still establish the game is on screen.
@@ -248,9 +253,17 @@ class CaptureService : Service() {
             }
         } else noForegroundSince = 0L
         if (targetApp != null && app != null && targetApp != app) { halt("앱 전환 감지"); return }
+        if(!automatic && frame.signature()==lastRecommendedSignature &&
+            scoreTracker.combo()==lastRecommendedCombo &&
+            scoreTracker.misses()==lastRecommendedMisses)return
         status("배치 계산 중 · 블록 " + frame.shapes.size + "개")
         val result = Planner.best(frame.board,frame.shapes.map { it.piece },if(automatic) 220 else 500,scoreTracker.combo(),scoreTracker.misses())
         if (!valid(epoch)) return
+        if(!automatic) {
+            lastRecommendedSignature=frame.signature()
+            lastRecommendedCombo=scoreTracker.combo()
+            lastRecommendedMisses=scoreTracker.misses()
+        }
         if (result == null || result.moves.size != frame.shapes.size) {
             // A partial recommendation is not safe for unattended autoplay:
             // the remaining visible piece(s) may already be impossible to fit.
