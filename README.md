@@ -1,4 +1,4 @@
-# Block Blast Advisor + Auto v1.3.4
+# Block Blast Advisor + Auto v1.3.5
 
 Android 11+ 전용 오프라인 Block Blast Classic 게임판 분석 앱입니다. **추천 모드**와 **자동 플레이 모드**를 같은 앱에서 선택할 수 있습니다.
 
@@ -10,12 +10,20 @@ Android 11+ 전용 오프라인 Block Blast Classic 게임판 분석 앱입니�
 
 ## 사용법
 
-1. [오토플레이 전용 빌드 페이지](https://github.com/shinminjun06/youtube-skipper/actions?query=branch%3Ablockblast-autoplay-build)에서 **Build BlockBlast Advisor + Auto APK**가 초록 체크로 완료된 실행을 열고 **BlockBlastAutoPlay-apk** ZIP을 다운로드합니다. ZIP을 풀고 **BlockBlastAutoPlay-v1.3.4.apk**를 설치하세요. 구버전과 혼동하지 마세요.
+1. [오토플레이 전용 빌드 페이지](https://github.com/shinminjun06/youtube-skipper/actions?query=branch%3Ablockblast-autoplay-build)에서 **Build BlockBlast Advisor + Auto APK**가 초록 체크로 완료된 실행을 열고 **BlockBlastAutoPlay-apk** ZIP을 다운로드합니다. ZIP을 풀고 **BlockBlastAutoPlay-v1.3.5.apk**를 설치하세요. 구버전과 혼동하지 마세요.
 2. 홈 화면에서 **Block Blast AutoPlay** 아이콘을 실행해 **v1.3.4**이라고 표시되는지 확인합니다. 기존 **Block Blast Advisor**(v1.2)는 다른 앱으로 남아 있습니다. 기존 Advisor의 접근성 서비스를 끄고 **Block Blast AutoPlay** 접근성을 연결한 다음 **전체 화면 공유 시작**을 승인합니다.
 3. 앱 첫 화면에서 **자동 플레이 모드 선택**을 누른 뒤 Block Blast Classic의 세로 화면을 엽니다. 자동 모드에서는 하단에 고정되는 플로팅 창에서도 **모드: 추천** 또는 **모드: 자동**을 전환할 수 있습니다.
 4. **▶ 시작**을 누릅니다. 추천에서는 초록색 칸을 보고 수동으로 놓습니다. 자동에서는 앱이 표시된 블록을 먼저 잡고, 위치를 확인한 다음 놓습니다.
 5. **■ 중지**로 언제든 자동 제스처를 중단할 수 있습니다. 모드 전환도 조작 중에는 잠깁니다.
 6. 추적 실패 시 앱의 **위치 측정 실패 진단 파일 저장**을 이용해 원인 분석용 ZIP을 저장할 수 있습니다.
+
+## v1.3.5 세로 2칸 블록 잡기 오류 수정
+
+- v1.3.4 사용자 진단 ZIP의 **NO_HELD_MATCH / PICKED** 상황: 빈 게임판의 보라색 세로 2칸 블록을 정상적으로 잡았고, 진단 영상에서 블록 외곽의 가로 좌표는 `511..587 → 433..509`로 **78픽셀 왼쪽 이동**했습니다. 앱에서 요청한 이동은 약 `52픽셀`이었습니다.
+- 기존 탐색기는 이전 손가락 위치 `416`에서 오른쪽으로 **1칸(약 80픽셀)**까지만 검색해 블록 원점 `511`을 놓쳤습니다. 실제 블록 움직임은 정상인데도 **잡지 못했다고 판단**했던 문제입니다.
+- 보통은 원래의 빠른 손가락 근처 검색 범위를 사용하고, 찾지 못한 경우에만 **왼쪽 추가 2.5칸, 오른쪽 3칸까지 넓혀 재검색**합니다. 손가락 대비 게임의 가로 드래그 보정값이 달라도 새로 나타난 실제 조각을 찾도록 했습니다.
+- 넓혀 찾았더라도 조각의 색상, 전체 모양, 새로 생긴 화면 픽셀, **명령한 이동 방향과 크기**가 모두 일치해야 잡기 성공으로 인정합니다. 정지된 조각·반대 방향 이동은 인식하지 않습니다.
+- 진단 이미지 원본은 공개 GitHub에 넣지 않고, **해당 720×1560 좌표와 블록 이동을 합성한 테스트**로 회귀 확인합니다. 실제 게임에서 끊김 없는 자동 플레이 성공률은 아직 실기기 검증이 필요합니다.
 
 ## v1.3.4 노란색 T자 블록 추적 오류 개선
 
