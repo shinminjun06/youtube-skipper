@@ -37,7 +37,15 @@ public final class DragAlignment {
                 }
             }
         }
-        if(hits<total*.9f||novel<total*minNovel)return -1;
+        // During wide-area tracking the held shape can pass UNDER our floating
+        // status panel. On the v1.3.1 field diagnostic the purple 2x2 was
+        // visibly present at (523,273), but the panel covered 6/36 sample
+        // pixels (83% coverage), causing the old 90% rule to reject it.
+        // Keep the stricter 90% requirement for target-area confirmation;
+        // the relaxed result below is used only to re-find a moving piece.
+        float requiredCoverage=changedCenters?.80f:.90f;
+        if(hits<total*requiredCoverage||novel<total*minNovel)return -1;
+        if(changedCenters && clean<edges*.75f)return -1;
         return hits/(float)total*.7f+clean/(float)edges*.3f;
     }
     /** A game-specific finger lift may put the held shape over the board.
@@ -95,7 +103,10 @@ public final class DragAlignment {
         List<float[]> seeds=new ArrayList<>();
         for(float y=minY;y<=maxY;y+=step)for(float x=minX;x<=maxX;x+=step) {
             float value=score(im,before,shape.piece,shape.color,x,y,cell,.3f,true);
-            if(value<.9f)continue;
+            // Candidate needs all occupied CELL CENTERS to be newly painted,
+            // plus >=80% color coverage and mostly clean outer edges. This
+            // tolerates a narrow HUD occlusion but not a stationary board tile.
+            if(value<.86f)continue;
             float[] seed=null;
             for(float[] candidate:seeds)if(Math.abs(x-candidate[0])<cell*.55f&&Math.abs(y-candidate[1])<cell*.55f){seed=candidate;break;}
             if(seed==null) {
