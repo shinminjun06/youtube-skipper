@@ -130,10 +130,26 @@ public final class DragAlignment {
         return selected;
     }
     private static List<Origin> stagedCandidates(Game.Image im,Game.Image before,Game.Frame frame,Game.Shape shape,float fingerX,float fingerY) {
+        // Normally the sprite is above/left of the held finger. Some Android
+        // Classic drag skins also render it 1.2-2.2 board cells to the RIGHT
+        // of the finger. In the uploaded v1.3.4 diagnostic the previous
+        // purple 1x2 origin was x=511 while previous fingerX=416. The
+        // historical maxX=fingerX+cell=496 clipped away a valid moving
+        // shape. First scan the fast, historical window, then only widen if
+        // it was empty. Shape uniqueness and motion proof are still required.
+        List<Origin> near=stagedCandidates(im,before,frame,shape,fingerX,fingerY,false);
+        return near.isEmpty()
+            ? stagedCandidates(im,before,frame,shape,fingerX,fingerY,true)
+            : near;
+    }
+    private static List<Origin> stagedCandidates(Game.Image im,Game.Image before,Game.Frame frame,Game.Shape shape,float fingerX,float fingerY,boolean expanded) {
         List<Origin> result=new ArrayList<>();
         if(im.width!=before.width||im.height!=before.height)return result;
         float cell=frame.cell,step=Math.max(2,cell*.08f);
-        float minX=Math.max(0,fingerX-(shape.piece.w+1)*cell),maxX=Math.min(im.width-shape.piece.w*cell,fingerX+cell);
+        float leftMargin=shape.piece.w+(expanded?2.5f:1f);
+        float rightMargin=expanded?3f:1f;
+        float minX=Math.max(0,fingerX-leftMargin*cell);
+        float maxX=Math.min(im.width-shape.piece.w*cell,fingerX+rightMargin*cell);
         float minY=0,maxY=Math.min(im.height-shape.piece.h*cell,fingerY+cell*.5f);
         List<float[]> seeds=new ArrayList<>();
         for(float y=minY;y<=maxY;y+=step)for(float x=minX;x<=maxX;x+=step) {
