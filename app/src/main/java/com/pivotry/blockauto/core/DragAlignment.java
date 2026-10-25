@@ -462,9 +462,11 @@ public final class DragAlignment {
      * is restricted to the staged ALIGN phase by its caller; it NEVER
      * authorizes releasing a piece at the target on its own.
      *
-     * Require FIVE fresh centers of SIX, one remaining old center in an
-     * explicitly occupied board cell (not any tray or arbitrary screenshot
-     * decoration), high new-pixel coverage, and a unique whole-piece match.
+     * Require n-1 new centers and ONE unchanged center belonging to an
+     * occupied same-color board tile; never accept any unrelated overlay,
+     * tray thumbnail, or multiple old centers. Check the whole piece and
+     * preserve uniqueness. This supports 2x3 rectangles and shifted 3x2
+     * tetrominoes without relaxing the ordinary target/drop conditions.
      */
     public static Origin locateOverOccupiedBoard(Game.Image im,Game.Image before,
             Game.Frame frame,Game.Shape shape,float fingerX,float fingerY){
@@ -472,9 +474,13 @@ public final class DragAlignment {
            im.width!=before.width||im.height!=before.height||
            !Float.isFinite(fingerX)||!Float.isFinite(fingerY)||
            !Float.isFinite(frame.cell)||frame.cell<=10f||
-           shape.piece.w!=2||shape.piece.h!=3||shape.piece.xs.length!=6)
+           shape.piece.w>3||shape.piece.h>3||
+           shape.piece.xs.length<4||shape.piece.xs.length>6)
             return null;
         float cell=frame.cell,step=Math.max(2f,cell*.10f);
+        // All original pixels are always reexamined. Relax the novelty
+        // threshold ONLY for a single explicitly occupied board square.
+        final float minimumNovelty=shape.piece.xs.length==4?.56f:.62f;
         float minX=Math.max(0,fingerX-(shape.piece.w+2.5f)*cell);
         float maxX=Math.min(im.width-shape.piece.w*cell,fingerX+3f*cell);
         float minY=Math.max(0,fingerY-8.5f*cell);
@@ -482,10 +488,11 @@ public final class DragAlignment {
         if(minX>maxX||minY>maxY)return null;
         List<float[]> seeds=new ArrayList<>();
         for(float y=minY;y<=maxY;y+=step)for(float x=minX;x<=maxX;x+=step){
-            // Score includes all six colored squares; shade samples must
-            // have >=62% novelty. The single old center is checked below.
+            // Every piece square must be correct material. A unique old
+            // center receives an exemption only if the stored board bitmap
+            // confirms that exact square was already filled.
             float strength=score(im,before,shape.piece,shape.color,
-                x,y,cell,.62f,false);
+                x,y,cell,minimumNovelty,false);
             if(strength<.89f||
                !oneOldBoardCenter(im,before,frame,shape,x,y))continue;
             float[] group=null;
@@ -501,7 +508,7 @@ public final class DragAlignment {
         if(seeds.size()!=1)return null;
         float[] best=seeds.get(0);
         Origin found=refine(im,before,frame,shape,minX,maxX,minY,maxY,
-            .62f,false,best[2],best[3],best[4]);
+            minimumNovelty,false,best[2],best[3],best[4]);
         return oneOldBoardCenter(im,before,frame,shape,found.x,found.y)
             ?found:null;
     }
@@ -529,7 +536,7 @@ public final class DragAlignment {
                Math.abs(cy-centerY)>cell*.35f)return false;
             oldBoard++;
         }
-        return fresh==5&&oldBoard==1;
+        return fresh==shape.piece.xs.length-1&&oldBoard==1;
     }
 
     /** A deliberate sub-cell pointer move distinguishes continuous held motion

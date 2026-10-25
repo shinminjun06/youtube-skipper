@@ -88,6 +88,7 @@ class CaptureService : Service() {
     /** Start at v1.4.2-safe speed; accelerate only after verified clean moves. */
     private val pace = AdaptivePace()
     private var usedBoardOverlapRecovery = false
+    private var lastBoardOverlapShape: String? = null
     private var usedComboClearPreview = false
     private var usedLineGlowPreview = false
     private var usedBevelZigzagRecovery = false
@@ -177,6 +178,7 @@ class CaptureService : Service() {
             lastCorrectionOrigin=null
             lastServoFailureDetail=null
             usedBoardOverlapRecovery=false
+            lastBoardOverlapShape=null
             usedComboClearPreview=false
             usedLineGlowPreview=false
             usedBevelZigzagRecovery=false
@@ -383,6 +385,7 @@ class CaptureService : Service() {
         before = frame; beforeImage = image; probeImage = null
         pendingDragSample=null
         usedBoardOverlapRecovery=false
+        lastBoardOverlapShape=null
         usedComboClearPreview=false
         usedLineGlowPreview=false
         usedBevelZigzagRecovery=false
@@ -515,9 +518,9 @@ class CaptureService : Service() {
         val regularHeld=if(phase==Phase.ALIGN && targetMatch==null && stackedPreview==null)
             DragAlignment.locate(image,beforeImage!!,frame,shape,fingerX,fingerY)
             else null
-        // Diagnostic (13): the moving green 2x3 overlaid ONE occupied
-        // same-colour BOARD cell. Keep the ordinary full-shape tracker first.
-        // This evidence is correction-only; never enough to release.
+        // Diagnostic (13)/(17): a moving colored piece can overlay ONE
+        // existing SAME-COLOR occupied BOARD cell. Normal tracking first.
+        // This fallback is correction-only, never sufficient to release.
         val occupiedBoardRecovery=if(phase==Phase.ALIGN && regularHeld==null &&
                 targetMatch==null && stackedPreview==null &&
                 !directDragUsed && corrections>=1)
@@ -588,8 +591,10 @@ class CaptureService : Service() {
             usedBoardOverlapRecovery=true
             pace.uncertainty()
             lastCorrectionOrigin=null // no motor gain learning from this proxy
+            lastBoardOverlapShape=shape.piece.key
             android.util.Log.i("BlockBlastAuto",
-                "BOARD_OVERLAP_RECOVERY 2x3 correction-only origin="+
+                "BOARD_OVERLAP_RECOVERY correction-only piece="+
+                shape.piece.key+" origin="+
                 occupiedBoardRecovery.x+","+occupiedBoardRecovery.y)
         }
         if(sourceOverlapRecovery!=null)
@@ -772,6 +777,7 @@ class CaptureService : Service() {
             .put("observedOriginY",observed?.y ?: JSONObject.NULL)
             .put("servoFailureDetail",lastServoFailureDetail ?: JSONObject.NULL)
             .put("usedBoardOverlapRecovery",usedBoardOverlapRecovery)
+            .put("boardOverlapShape",lastBoardOverlapShape ?: JSONObject.NULL)
             .put("usedComboClearPreview",usedComboClearPreview)
             .put("usedLineGlowPreview",usedLineGlowPreview)
             .put("usedBevelZigzagRecovery",usedBevelZigzagRecovery)

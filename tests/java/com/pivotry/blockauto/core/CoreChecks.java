@@ -1073,6 +1073,64 @@ public final class CoreChecks {
 
 
 
+
+    /**
+     * v1.4.11 diagnostic (17): 720x1560, 79.5px cells. Held purple
+     * staggered 3x2 tetromino (top: x1,x2; bottom: x0,x1) visibly at
+     * origin ~(269,680), finger ~(447.5,1004). Three moving centers are
+     * newly purple, but top-right overlaps an OLD purple BOARD square
+     * at row=4,col=5. It is NOT a second moving block.
+     */
+    static void diagnostic17PurpleShiftedBoardOverlap() {
+        int w=720,h=1560,bg=0xff212d52,purple=0xff9259d6;
+        float cell=79.5f,left=43,top=368;
+        Game.Piece shifted=new Game.Piece(1,0,2,0,0,1,1,1);
+        Game.Shape selected=new Game.Shape(2,shifted,569.5f,1174f,purple);
+        long oneExisting=1L<<(4*8+5);
+        Game.Frame frame=new Game.Frame(oneExisting,java.util.Arrays.asList(selected),
+            left,top,cell,w,h,1f);
+        int[] pixels=new int[w*h];java.util.Arrays.fill(pixels,bg);
+        paintCell(pixels,w,h,left,top,cell,5,4,purple);
+        // A second same-colored STATIC tile directly next to the held
+        // piece must not be accepted as one of its occupied cells.
+        paintCell(pixels,w,h,left,top,cell,5,5,purple);
+        Game.Image before=new Game.Image(w,h,pixels);
+        Game.Image held=lifted(before,frame,selected,269,685);
+        check(DragAlignment.locate(held,before,frame,selected,
+            447.49954f,1004f)==null,
+            "old all-centers-new tracker must reject diag17 purple overlap");
+        DragAlignment.Origin match=DragAlignment.locateOverOccupiedBoard(
+            held,before,frame,selected,447.49954f,1004f);
+        check(match!=null && Math.abs(match.x-269)<cell*.23f &&
+            Math.abs(match.y-685)<cell*.23f,
+            "4-cell shifted purple piece recovered despite one old board center");
+        Game.Frame noOld=new Game.Frame(0,frame.shapes,left,top,cell,w,h,1);
+        check(DragAlignment.locateOverOccupiedBoard(
+            held,before,noOld,selected,447.49954f,1004f)==null,
+            "one old-color center without board occupancy must fail");
+        Game.Image staticFrame=new Game.Image(w,h,pixels.clone());
+        check(DragAlignment.locateOverOccupiedBoard(
+            staticFrame,before,frame,selected,447.49954f,1004f)==null,
+            "unmoved same-color board tiles cannot masquerade as picked sprite");
+        int[] notFour=held.pixels.clone();
+        paintCell(notFour,w,h,left,top,cell,3,5,bg);
+        check(DragAlignment.locateOverOccupiedBoard(
+            new Game.Image(w,h,notFour),before,frame,selected,
+            447.49954f,1004f)==null,
+            "missing any of the three novel purple centers must fail");
+        // A second unchanged center disqualifies the single-tile exemption.
+        int[] twoOld=pixels.clone();
+        paintCell(twoOld,w,h,left,top,cell,4,4,purple);
+        Game.Image beforeTwo=new Game.Image(w,h,twoOld);
+        Game.Image heldTwo=lifted(beforeTwo,frame,selected,269,685);
+        Game.Frame bothOld=new Game.Frame(oneExisting|(1L<<(4*8+4)),
+            frame.shapes,left,top,cell,w,h,1);
+        check(DragAlignment.locateOverOccupiedBoard(
+            heldTwo,beforeTwo,bothOld,selected,447.49954f,1004f)==null,
+            "two stationary purple centers are not an eligible recovery");
+        // Existing 2x3/green regression also remains in full test suite.
+    }
+
     static void diagnostic16OrangeDarkBevelRegression() {
         // Actual diag16 parameters: 720x1560, 79.625 cell, target
         // (42,766.125), finger (176.8625,1114.5804), moved orange
@@ -1544,6 +1602,7 @@ public final class CoreChecks {
     }
 
     public static void main(String[] args) throws Exception {
+        diagnostic17PurpleShiftedBoardOverlap();
         diagnostic16OrangeDarkBevelRegression();
         diagnostic15BlueLineGlowRegression();
         diagnostic14ComboGlowRegression();
