@@ -272,8 +272,8 @@ class CaptureService : Service() {
                 pendingDragSample?.let { sample ->
                     if(dragCalibration.recordVerified(sample)) {
                         android.util.Log.i("BlockBlastAuto",
-                            "verified calibration slot="+sample.slot+
-                            " agreements="+dragCalibration.confidence(sample.slot)+
+                            "verified calibration slot="+sample.slot+" shape="+sample.pieceKey+
+                            " agreements="+dragCalibration.confidence(sample.slot,sample.pieceKey)+
                             " total="+dragCalibration.confirmedSamples())
                     }
                 }
@@ -371,6 +371,12 @@ class CaptureService : Service() {
         motionStartedAt=now
         motionGestureCount=0
         directDragUsed=predicted!=null
+        if(predicted==null && dragCalibration.confidence(shape.slot)>0) {
+            android.util.Log.i("BlockBlastAuto",
+                "direct drag rejected: slot="+shape.slot+" shape="+shape.piece.key+
+                " exactShapeConfidence="+dragCalibration.confidence(shape.slot,shape.piece.key)+
+                " target="+targetX+","+targetY+" screen="+frame.width+"x"+frame.height)
+        }
         if(predicted!=null) {
             directDragCount++
             fingerX=predicted[0]; fingerY=predicted[1]
@@ -557,7 +563,7 @@ class CaptureService : Service() {
             // Capture a learning candidate, NOT a confirmed sample.
             // It is committed ONLY if MoveVerifier proves the expected
             // board and consumed tray slot after the pointer is released.
-            pendingDragSample=DragCalibration.Observation(shape.slot,
+            pendingDragSample=DragCalibration.Observation(shape.slot,shape.piece.key,
                 shape.piece.w,shape.piece.h,frame.cell,
                 fingerX,fingerY,found.x,found.y)
             status("목표 칸 미리보기 확인 · 블록 놓기")
@@ -627,6 +633,8 @@ class CaptureService : Service() {
             .put("observedOriginY",observed?.y ?: JSONObject.NULL)
             .put("pickupRetry",phase==Phase.PICKED && corrections==1)
             .put("calibratedDirectStart",directDragUsed)
+            .put("exactShapeCalibrationConfidence",dragCalibration.confidence(shape.slot,shape.piece.key))
+            .put("slotAnyShapeCalibrationConfidence",dragCalibration.confidence(shape.slot))
             .put("visualResponseMeasured",dragResponse.measured())
             .put("gestureSpeedTier",pace.tier().name)
             .put("consecutiveCleanPlacements",pace.cleanPlacements())
