@@ -690,6 +690,74 @@ public final class DragAlignment {
             oldMask==((1<<0)|(1<<2));
     }
 
+
+    /**
+     * Generic correction-only tracking for a piece hidden over existing
+     * same-color board tiles. Checks every cell against before/current,
+     * the saved board occupancy, and 25 temporal face samples per old tile.
+     * An unmoving board, a lone changed tile, and ambiguous origins all fail.
+     * Never use this estimate to release or calibrate a drag.
+     */
+    public static Origin locateTemporalBoardOverlap(Game.Image now,
+            Game.Image before,Game.Frame frame,Game.Shape shape,
+            float fingerX,float fingerY) {
+        if(now==null||before==null||frame==null||shape==null||
+            now.width!=before.width||now.height!=before.height||
+            now.width!=frame.width||now.height!=frame.height||
+            !Float.isFinite(fingerX)||!Float.isFinite(fingerY)||
+            !Float.isFinite(frame.cell)||frame.cell<=10f||
+            shape.piece.xs.length<3||shape.piece.xs.length>8)return null;
+        Game.Piece p=shape.piece;
+        float cell=frame.cell;
+        Origin bestOrigin=null;
+        int bestCol=-1,bestRow=-1;
+        float bestStrength=-1f;
+        final float[] samples={.26f,.38f,.50f,.62f,.74f};
+        for(int row=0;row<=8-p.h;row++)for(int col=0;col<=8-p.w;col++)
+            for(int sy=-2;sy<=2;sy++)for(int sx=-2;sx<=2;sx++) {
+                float x=frame.left+(col+sx*.12f)*cell;
+                float y=frame.top+(row+sy*.12f)*cell;
+                if(x<0||y<0||x+p.w*cell>now.width||
+                   y+p.h*cell>now.height||
+                   x<fingerX-(p.w+3f)*cell||x>fingerX+3.5f*cell||
+                   y<fingerY-9f*cell||y>fingerY-.55f*cell)continue;
+                int fresh=0,covered=0;
+                float strength=0f;
+                boolean ok=true;
+                for(int i=0;i<p.xs.length;i++) {
+                    float cx=x+(p.xs[i]+.5f)*cell;
+                    float cy=y+(p.ys[i]+.5f)*cell;
+                    int current=now.at(cx,cy),prior=before.at(cx,cy);
+                    if(!same(current,shape.color)){ok=false;break;}
+                    if(Recognizer.distance(current,prior)>60){
+                        fresh++;strength+=5f;continue;
+                    }
+                    int bit=(row+p.ys[i])*8+col+p.xs[i];
+                    if((frame.board&(1L<<bit))==0L||
+                       !same(prior,shape.color)){ok=false;break;}
+                    int changed=0,material=0;
+                    for(float dy:samples)for(float dx:samples) {
+                        float xx=x+(p.xs[i]+dx)*cell;
+                        float yy=y+(p.ys[i]+dy)*cell;
+                        int c=now.at(xx,yy);
+                        if(same(c,shape.color))material++;
+                        if(Recognizer.distance(c,before.at(xx,yy))>=4)
+                            changed++;
+                    }
+                    if(changed<5||material<15){ok=false;break;}
+                    covered++;strength+=changed/25f;
+                }
+                if(!ok||fresh<1||covered<2)continue;
+                if(bestCol>=0&&(bestCol!=col||bestRow!=row))
+                    return null; // two distinct whole-shape origins
+                if(strength>bestStrength){
+                    bestStrength=strength;bestCol=col;bestRow=row;
+                    bestOrigin=new Origin(x,y,.75f);
+                }
+            }
+        return bestOrigin;
+    }
+
     /** A deliberate sub-cell pointer move distinguishes continuous held motion
      * from stationary or whole-cell-snapped previews. Ambiguity never releases. */
     public static Origin locateMoving(Game.Image im,Game.Image before,Game.Image previous,Game.Frame frame,Game.Shape shape,
