@@ -94,6 +94,10 @@ class CaptureService : Service() {
     private val dragResponse = DragResponse()
     /** Start at v1.4.2-safe speed; accelerate only after verified clean moves. */
     private val pace = AdaptivePace()
+    private val scoreSettler = ScoreSettler()
+    private var pickupRetryCount=0
+    private var pickupRetrySignature=""
+    private var pickupStageTargetY=0f
     private var usedBoardOverlapRecovery = false
     private var blindReacquisitionMoves=0
     private var lastBoardOverlapShape: String? = null
@@ -187,6 +191,9 @@ class CaptureService : Service() {
             dragCalibration.reset()
             dragResponse.reset()
             pace.reset()
+            scoreSettler.reset()
+            pickupRetryCount=0;pickupRetrySignature=""
+            pickupStageTargetY=0f
             lastCorrectionOrigin=null
             lastServoFailureDetail=null
             usedBoardOverlapRecovery=false
@@ -303,7 +310,16 @@ class CaptureService : Service() {
             return
         }
         lastDetectionCode = ""
-        if (phase == Phase.IDLE) scoreTracker.observe(frame)
+        if (phase == Phase.IDLE) {
+            scoreTracker.observe(frame)
+            // A board/tray can become recognizable before the previous
+            // score animation has finished. Never start a new touch on a
+            // screen still transitioning between game states.
+            if(!scoreSettler.ready(image,now)) {
+                status("점수·화면 안정화 확인 중")
+                return
+            }
+        }
         if (phase == Phase.VERIFY) {
             if (stable(frame.signature(),now) && verifier!!.matches(frame)) {
                 verifiedMoves++
@@ -339,6 +355,8 @@ class CaptureService : Service() {
                     " · 직접 "+verifiedDirectCount+" / 기본 "+verifiedStagedCount+
                     " · 평균 제스처 "+String.format(java.util.Locale.US,"%.1f",avgGestures))
                 phase = Phase.IDLE; stableSignature = ""; beforeImage = null; probeImage = null; before = null
+                pickupRetryCount=0; pickupRetrySignature=""
+                scoreSettler.reset()
                 verifier = null; retries = 0; retrySignature = ""; actionFloor = Long.MIN_VALUE
             } else if (now-phaseAt > 3200) {
                 pendingDragSample=null
@@ -384,6 +402,9 @@ class CaptureService : Service() {
             return
         }
         if (retrySignature.isNotEmpty() && frame.signature() != retrySignature) { retries = 0; retrySignature = "" }
+        if (pickupRetrySignature.isNotEmpty() && frame.signature()!=pickupRetrySignature) {
+            pickupRetryCount=0;pickupRetrySignature=""
+        }
         val move = result.moves.first()
         val shape = frame.shapes[move.piece]
         // Record the expected board before input. Only an observed match
@@ -444,10 +465,20 @@ class CaptureService : Service() {
             }
         } else {
             stagedDragCount++
-            fingerX = frame.width*.5f
-            fingerY = min(frame.height-frame.cell*.7f,
-                frame.top+8*frame.cell+shape.piece.h*frame.cell*.5f+2*frame.cell)
-            status("기본 안전 이동 · 블록 " + (shape.slot+1) + "번 · 콤보 " + scoreTracker.combo())
+            val stage=PickupControl.stage(frame,shape,pickupRetryCount)
+            if(stage==null) {
+                freezeFailure(image,"INVALID_PICKUP_PATH")
+                halt("픽업 경로 계산 불가 · 안전 정지")
+                return
+            }
+            fingerX=stage[0]
+            fingerY=stage[1]
+            pickupStageTargetY=fingerY
+            android.util.Log.i("BlockBlastAuto",
+                "PICKUP_STAGE source="+shape.pickX+","+shape.pickY+
+                " target="+fingerX+","+fingerY+
+                " attempt="+pickupRetryCount)
+            status("위쪽으로 안전하게 블록 집기 · "+(shape.slot+1)+"번")
             gesture(epoch,Phase.PICKED) { service,done ->
                 service.beginDrag(shape.pickX*scaleX(frame),shape.pickY*scaleY(frame),
                     fingerX*scaleX(frame),fingerY*scaleY(frame),app,
@@ -488,8 +519,15 @@ class CaptureService : Service() {
         val frame = before ?: return
         val shape = selected ?: return
         if (phase == Phase.PICKED && probeImage == null) {
-            // Confirm movement while keeping the same pointer down. A static or
-            // whole-cell-snapped preview must not determine our finger offset.
+            // Android's gesture callback is not game pickup evidence.
+            // Diag21: all board/tray pixels remained EXACTLY unchanged;
+            // score digits alone changed while the game ignored pickup.
+            if(!PickupControl.gameplayChanged(beforeImage!!,image,frame)) {
+                if(now-phaseAt>=650L) retryUnregisteredPickup(image,epoch)
+                return
+            }
+            // Only after real gameplay pixels change do we probe the
+            // actual held sprite. This still is not release permission.
             probeImage = image; probeDX = frame.cell*.7f; probeDY = 0f
             if (fingerX+probeDX > frame.width-2) probeDX = -probeDX
             fingerX += probeDX
@@ -699,6 +737,11 @@ class CaptureService : Service() {
         if (!valid(epoch)) return
         if (found == null) {
             observed = null
+            if(phase==Phase.PICKED &&
+                    !PickupControl.gameplayChanged(beforeImage!!,image,frame)) {
+                if(now-phaseAt>=650L)retryUnregisteredPickup(image,epoch)
+                return
+            }
             // A single probe may land during a render transition. Reprobe
             // once in the opposite direction without releasing the pointer.
             if (phase == Phase.PICKED && corrections == 0 && now-phaseAt > 900) {
@@ -896,6 +939,59 @@ class CaptureService : Service() {
             }
         }
     }
+    /**
+     * Repair an unregistered PICKUP instead of guessing sprite coordinates.
+     * Cancel the previous Android pointer first; only after cancellation
+     * callback re-enter recognition, allow the score to settle, and retry
+     * once from the unchanged board/tray with a higher UPWARD stage.
+     * Never continue a failed press, and never claim it was picked.
+     */
+    private fun retryUnregisteredPickup(image: Game.Image,epoch:Int) {
+        val frame=before ?: return
+        val signature=frame.signature()
+        if(pickupRetrySignature!=signature) {
+            pickupRetrySignature=signature
+            pickupRetryCount=0
+        }
+        if(pickupRetryCount>=1) {
+            freezeFailure(image,"PICKUP_NO_GAMEPLAY_RESPONSE")
+            halt("게임이 블록 집기에 반응하지 않음 · 재시도 후 안전 정지")
+            return
+        }
+        pickupRetryCount++
+        pace.uncertainty()
+        android.util.Log.w("BlockBlastAuto",
+            "PICKUP_NO_GAMEPLAY_RESPONSE board/tray unchanged; cancel & retry "+
+            pickupRetryCount+"/1 oldStageY="+pickupStageTargetY)
+        status("블록 집기 미반응 · 터치 취소 후 재시도")
+        // Prevent worker ticks while the AccessibilityService is cancelling
+        // the original held pointer, rather than racing a new press with it.
+        inFlight=true
+        main.post {
+            val service=AutoService.live
+            if(service==null) {
+                worker.post {if(valid(epoch))halt("접근성 서비스가 사라짐") }
+                return@post
+            }
+            service.abortHold {
+                worker.post {
+                    if(!valid(epoch))return@post
+                    inFlight=false
+                    phase=Phase.IDLE
+                    before=null;beforeImage=null;probeImage=null
+                    selected=null;verifier=null;observed=null
+                    lastCorrectionOrigin=null;trustedHeldOrigin=null
+                    pendingDragSample=null
+                    stableSignature=""
+                    actionFloor=Long.MIN_VALUE
+                    scoreSettler.reset()
+                    nextReadAt=SystemClock.uptimeMillis()+650L
+                    status("집기 재시도 대기 · 더 높은 위치로 이동")
+                }
+            }
+        }
+    }
+
     private fun freezeFailure(image: Game.Image,reason: String) {
         val original = beforeImage ?: return
         val frame = before ?: return
@@ -909,6 +1005,10 @@ class CaptureService : Service() {
             .put("observedOriginY",observed?.y ?: JSONObject.NULL)
             .put("servoFailureDetail",lastServoFailureDetail ?: JSONObject.NULL)
             .put("usedBoardOverlapRecovery",usedBoardOverlapRecovery)
+            .put("pickupRetryCount",pickupRetryCount)
+            .put("pickupStageTargetY",pickupStageTargetY)
+            .put("gameplayChangedSincePickup",
+                PickupControl.gameplayChanged(original,image,frame))
             .put("blindReacquisitionMoves",blindReacquisitionMoves)
             .put("boardOverlapShape",lastBoardOverlapShape ?: JSONObject.NULL)
             .put("roiTightMatches",roiTightMatches)
