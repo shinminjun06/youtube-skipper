@@ -12,6 +12,41 @@ public final class DragAlignment {
         return search(im,before,frame,shape,Math.max(0,x-radius),Math.min(im.width-shape.piece.w*frame.cell,x+radius),
             Math.max(0,y-radius),Math.min(im.height-shape.piece.h*frame.cell,y+radius),.82f,false);
     }
+    /**
+     * Strong evidence that a grid-snapped drag PREVIEW occupies precisely the
+     * requested cells, even if its art rectangle has a persistent ~0.2-cell
+     * rendering offset. Caller must ALSO confirm a unique, stable target-local
+     * origin close to the intended coordinate before issuing ACTION_UP.
+     *
+     * This is NOT a substitute for verifying the board after release.
+     */
+    public static boolean targetCellPreview(Game.Image current,Game.Image before,
+            Game.Frame frame,Game.Shape held,int column,int row) {
+        if(current==null||before==null||frame==null||held==null ||
+           current.width!=before.width||current.height!=before.height)return false;
+        if(Rules.place(frame.board,held.piece,column,row)==null)return false;
+        float cell=frame.cell;
+        if(cell<=0)return false;
+        int n=held.piece.xs.length;
+        if(n==0)return false;
+        for(int i=0;i<n;i++) {
+            float left=frame.left+(column+held.piece.xs[i])*cell;
+            float top=frame.top+(row+held.piece.ys[i])*cell;
+            // Four interior probes for EACH requested square. A piece one
+            // column/row away cannot satisfy the absent edge-column probes.
+            int matched=0;
+            for(float oy:new float[]{.39f,.61f})for(float ox:new float[]{.39f,.61f}) {
+                int px= Math.round(left+ox*cell), py=Math.round(top+oy*cell);
+                if(px<0||py<0||px>=current.width||py>=current.height)continue;
+                int now=current.pixels[py*current.width+px];
+                int was=before.pixels[py*before.width+px];
+                if(same(now,held.color) && Recognizer.distance(now,was)>60)matched++;
+            }
+            if(matched<4)return false;
+        }
+        return true;
+    }
+
     private static boolean same(int c,int target) {
         return Recognizer.isTile(c)&&Recognizer.hi(c)>Recognizer.hi(target)*.78f&&Recognizer.distance(c,target)<125;
     }
