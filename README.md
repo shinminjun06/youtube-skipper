@@ -1,4 +1,4 @@
-# Block Blast Advisor + Auto v1.3.3
+# Block Blast Advisor + Auto v1.3.4
 
 Android 11+ 전용 오프라인 Block Blast Classic 게임판 분석 앱입니다. **추천 모드**와 **자동 플레이 모드**를 같은 앱에서 선택할 수 있습니다.
 
@@ -10,12 +10,20 @@ Android 11+ 전용 오프라인 Block Blast Classic 게임판 분석 앱입니�
 
 ## 사용법
 
-1. [오토플레이 전용 빌드 페이지](https://github.com/shinminjun06/youtube-skipper/actions?query=branch%3Ablockblast-autoplay-build)에서 **Build BlockBlast Advisor + Auto APK**가 초록 체크로 완료된 실행을 열고 **BlockBlastAutoPlay-apk** ZIP을 다운로드합니다. ZIP을 풀고 **BlockBlastAutoPlay-v1.3.3.apk**를 설치하세요. 구버전과 혼동하지 마세요.
-2. 홈 화면에서 **Block Blast AutoPlay** 아이콘을 실행해 **v1.3.2**이라고 표시되는지 확인합니다. 기존 **Block Blast Advisor**(v1.2)는 다른 앱으로 남아 있습니다. 기존 Advisor의 접근성 서비스를 끄고 **Block Blast AutoPlay** 접근성을 연결한 다음 **전체 화면 공유 시작**을 승인합니다.
+1. [오토플레이 전용 빌드 페이지](https://github.com/shinminjun06/youtube-skipper/actions?query=branch%3Ablockblast-autoplay-build)에서 **Build BlockBlast Advisor + Auto APK**가 초록 체크로 완료된 실행을 열고 **BlockBlastAutoPlay-apk** ZIP을 다운로드합니다. ZIP을 풀고 **BlockBlastAutoPlay-v1.3.4.apk**를 설치하세요. 구버전과 혼동하지 마세요.
+2. 홈 화면에서 **Block Blast AutoPlay** 아이콘을 실행해 **v1.3.4**이라고 표시되는지 확인합니다. 기존 **Block Blast Advisor**(v1.2)는 다른 앱으로 남아 있습니다. 기존 Advisor의 접근성 서비스를 끄고 **Block Blast AutoPlay** 접근성을 연결한 다음 **전체 화면 공유 시작**을 승인합니다.
 3. 앱 첫 화면에서 **자동 플레이 모드 선택**을 누른 뒤 Block Blast Classic의 세로 화면을 엽니다. 상단 이동 가능한 플로팅 창에서도 **모드: 추천** 또는 **모드: 자동**을 전환할 수 있습니다.
 4. **▶ 시작**을 누릅니다. 추천에서는 초록색 칸을 보고 수동으로 놓습니다. 자동에서는 앱이 표시된 블록을 먼저 잡고, 위치를 확인한 다음 놓습니다.
 5. **■ 중지**로 언제든 자동 제스처를 중단할 수 있습니다. 모드 전환도 조작 중에는 잠깁니다.
 6. 추적 실패 시 앱의 **위치 측정 실패 진단 파일 저장**을 이용해 원인 분석용 ZIP을 저장할 수 있습니다.
+
+## v1.3.4 노란색 T자 블록 추적 오류 개선
+
+- 진단 ZIP v1.3.3의 `NO_HELD_MATCH / ALIGN`은 한 번의 드래그 이후 노란 T자 블록이 게임판보다 높이 올라가고, 플로팅 상태 창이 블록의 **4개 중심 중 3개를 가린 상황**입니다. 실패 당시 좌표는 손가락 약 `(346,574)`, 블록 약 `(326,35)`, 목표 `(361,366)`이었습니다.
+- 자동 모드에서는 플로팅 조작창을 **화면 최하단(블록 트레이 아래)**으로 자동 이동합니다. 상태 메시지가 길어져 창 높이가 바뀌어도 다시 하단에 맞춥니다. 자동 입력 중에는 플로팅 창 드래그를 잠급니다. 정지 버튼은 계속 누를 수 있습니다.
+- 기존 보정은 목표-현재 블록 오차를 한 번의 손가락 이동으로 그대로 전달했습니다. **최대 2칸, 오차의 62%씩 단계 보정**하도록 변경해 큰 점프가 게임의 손가락-블록 수직 간격을 왜곡해 화면 위로 날아가는 일을 줄입니다. 최대 10회 보정과 14.5초 제스처 안전 타임아웃을 적용합니다.
+- 노란 T자 블록 가림 및 과도한 이동을 **사용자 스크린샷을 공개하지 않은 합성 테스트**로 확인합니다. 인식이 불확실하면 블록을 놓지 않고 정지하는 기존 안전장치를 유지합니다.
+- 자동 모드와 별개의 추천 전용 앱은 변경하지 않았습니다. **실제 기기에서 연속 성공은 아직 추가 검증이 필요**합니다.
 
 ## v1.3.3 자동 플레이 정렬 보정
 
