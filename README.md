@@ -1,4 +1,4 @@
-# Block Blast Advisor + Auto v1.3.0
+# Block Blast Advisor + Auto v1.3.1
 
 Android 11+ 전용 오프라인 Block Blast Classic 게임판 분석 앱입니다. **추천 모드**와 **자동 플레이 모드**를 같은 앱에서 선택할 수 있습니다.
 
@@ -10,14 +10,19 @@ Android 11+ 전용 오프라인 Block Blast Classic 게임판 분석 앱입니�
 
 ## 사용법
 
-1. [GitHub Actions 빌드](https://github.com/shinminjun06/youtube-skipper/actions?query=branch%3Ablockblast-autoplay-build)의 성공한 **Build BlockBlast Advisor + Auto APK** 실행을 열어 **BlockBlastAutoPlay-apk** ZIP을 내려받아 APK를 설치합니다.
-2. Android 접근성 서비스를 연결하고 **전체 화면 공유 시작**을 승인합니다.
-3. Block Blast Classic의 세로 화면을 엽니다. 상단 이동 가능한 플로팅 창에서 **모드: 추천** 또는 **모드: 자동**을 선택합니다.
+1. [오토플레이 전용 빌드 페이지](https://github.com/shinminjun06/youtube-skipper/actions?query=branch%3Ablockblast-autoplay-build)에서 **Build BlockBlast Advisor + Auto APK**가 초록 체크로 완료된 실행을 열고 **BlockBlastAutoPlay-apk** ZIP을 다운로드합니다. ZIP을 풀고 **BlockBlastAutoPlay-v1.3.1.apk**를 설치하세요. 구버전과 혼동하지 마세요.
+2. 홈 화면에서 **Block Blast AutoPlay** 아이콘을 실행해 **v1.3.1**이라고 표시되는지 확인합니다. 기존 **Block Blast Advisor**(v1.2)는 다른 앱으로 남아 있습니다. 기존 Advisor의 접근성 서비스를 끄고 **Block Blast AutoPlay** 접근성을 연결한 다음 **전체 화면 공유 시작**을 승인합니다.
+3. 앱 첫 화면에서 **자동 플레이 모드 선택**을 누른 뒤 Block Blast Classic의 세로 화면을 엽니다. 상단 이동 가능한 플로팅 창에서도 **모드: 추천** 또는 **모드: 자동**을 전환할 수 있습니다.
 4. **▶ 시작**을 누릅니다. 추천에서는 초록색 칸을 보고 수동으로 놓습니다. 자동에서는 앱이 표시된 블록을 먼저 잡고, 위치를 확인한 다음 놓습니다.
 5. **■ 중지**로 언제든 자동 제스처를 중단할 수 있습니다. 모드 전환도 조작 중에는 잠깁니다.
 6. 추적 실패 시 앱의 **위치 측정 실패 진단 파일 저장**을 이용해 원인 분석용 ZIP을 저장할 수 있습니다.
 
-## v1.3.0 변경 사항
+## v1.3.1 변경 사항
+
+- **설치 혼동 방지:** 앱 ID를 `com.pivotry.blockauto.autoplay`로 분리했고, 설치 앱 이름을 **Block Blast AutoPlay**로 변경했습니다. 기존 추천 전용 `com.pivotry.blockauto`는 그대로 남습니다. Android 접근성 설정에서 두 서비스를 동시에 켜지 마세요.
+- **명확한 모드 버튼:** 플로팅 창뿐 아니라 앱 첫 화면에도 **자동 플레이 모드 선택 / 하이라이트 추천 모드 선택** 버튼을 추가하고, `현재 모드` 상태를 표시합니다.
+- **버전 표시:** 앱 첫 화면과 APK 파일명에 **v1.3.1**이 명시됩니다. v1.2 화면이 뜬다면 여전히 기존 Advisor 앱을 실행한 것입니다.
+
 
 - v1.2.0의 3개 손패 탐색, 콤보 점수 근사 및 생존 평가, 기기 내 **COMBO** 텍스트 자동 인식을 계승합니다. 다른 버전에서는 실제 점수 규칙이 다를 수 있습니다.
 - 기존 v1.0.0의 Android 이어붙이기 드래그 제스처를 **선택형 자동 모드**로 복원했습니다. 기본 모드에서는 자동 터치가 불가능하도록 실제 동작부에서 검사합니다.
@@ -34,4 +39,9 @@ Android 11+ 전용 오프라인 Block Blast Classic 게임판 분석 앱입니�
 - **빌드 성공과 코어 테스트 통과만으로 실제 휴대폰 게임에서 터치 성공이 입증되는 것은 아닙니다.** 게임 버전, UI 크기, 화면 공유 렌더링과 애니메이션에 따라 추가 조정이 필요할 수 있습니다.
 - 앱에서 사진이나 텍스트를 외부 서버로 전송하지 않습니다. ML Kit의 텍스트 인식 모델은 APK에 포함됩니다. Android 루트가 필요하지 않습니다.
 
-Android 패키지 ID는 `com.pivotry.blockauto`로 기존 추천판과 같습니다. 이 APK를 설치하면 기존 앱을 **업데이트**하며 별도 앱으로 공존하지 않습니다. 이전 추천 전용 앱으로 돌아가려면 추천 전용 APK를 사용하세요(동일 패키지 버전 다운그레이드는 Android 정책상 재설치가 필요할 수 있습니다).
+### 설치 후 구분하는 방법
+
+- **Block Blast Advisor (v1.2):** 수동 추천 전용, 앱 ID `com.pivotry.blockauto`
+- **Block Blast AutoPlay (v1.3.1):** 수동 추천과 선택형 자동 플레이, 앱 ID `com.pivotry.blockauto.autoplay`
+
+두 앱은 동시에 설치할 수 있지만, 플로팅 버튼이 중복되지 않게 **둘 중 사용하는 앱의 접근성 서비스만 활성화**하세요.
