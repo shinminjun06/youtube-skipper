@@ -1746,6 +1746,64 @@ public final class CoreChecks {
             "invalid pointer cannot trigger a blind stroke");
     }
 
+    /**
+     * Diagnostic (21), real file metadata: v1.4.18, phase=PICKED, 720x1560
+     * one old blue board tile, five-cell gold tray at (359.5,1192).
+     * before/probe/held differ ONLY in the score region: not one gameplay
+     * pixel changed. An Android completed callback is not proof of pickup.
+     */
+    static void diagnostic21IgnoredPickupRegression() {
+        final int width=720,height=1560,bg=0xff212852,blue=0xff4265de,
+                  gold=0xffefbc30;
+        final float left=41f,top=368f,cell=79.875f;
+        Game.Piece longBar=new Game.Piece(0,0,0,1,0,2,0,3,0,4);
+        Game.Shape piece=new Game.Shape(1,longBar,359.5f,1192f,gold);
+        Game.Frame frame=new Game.Frame(1L<<16,
+            java.util.Arrays.asList(piece),left,top,cell,width,height,1);
+        int[] source=new int[width*height];
+        java.util.Arrays.fill(source,bg);
+        paintCell(source,width,height,left,top,cell,0,2,blue);
+        for(int y=1092;y<1295;y++)for(int x=346;x<373;x++)
+            source[y*width+x]=gold;
+        Game.Image before=new Game.Image(width,height,source);
+        int[] scoreOnly=source.clone();
+        // Ignore even a massive digit animation when the game board,
+        // selected tray and held sprite remain completely unchanged.
+        for(int y=230;y<305;y++)for(int x=175;x<580;x++)
+            scoreOnly[y*width+x]=0xffffffff;
+        Game.Image ignored=new Game.Image(width,height,scoreOnly);
+        check(!PickupControl.gameplayChanged(before,ignored,frame),
+            "diag21 score animation alone cannot confirm a pickup");
+        check(!PickupControl.gameplayChanged(before,before,frame),
+            "diag21 identical gameplay frames cannot authorize a probe");
+        float[] stage=PickupControl.stage(frame,piece,0);
+        check(stage!=null && stage[1]<piece.pickY-cell &&
+              stage[1]<top+8f*cell && Math.abs(stage[0]-piece.pickX)<2f,
+            "diag21 stage must leave the selected tray UPWARDS");
+        check(Math.abs(stage[1]-1366.4375f)>cell*3f,
+            "diag21 previously wrong downward stage must not return");
+        float[] second=PickupControl.stage(frame,piece,1);
+        check(second!=null && second[1]<stage[1]-cell*.5f,
+            "diag21 bounded second press uses a distinct higher route");
+        int[] changed=scoreOnly.clone();
+        for(int y=640;y<920;y++)for(int x=350;x<370;x++)
+            changed[y*width+x]=gold;
+        Game.Image lifted=new Game.Image(width,height,changed);
+        check(PickupControl.gameplayChanged(before,lifted,frame),
+            "a truly lifted sprite inside the board must be observable");
+        ScoreSettler settle=new ScoreSettler();
+        check(!settle.ready(before,1000L),
+            "score settling requires at least one pair of observations");
+        check(!settle.ready(before,1300L),
+            "a still-animating score delays the next pickup");
+        check(settle.ready(before,1700L),
+            "a settled unchanged score lets the next pickup proceed");
+        check(!settle.ready(ignored,1800L),
+            "a real digit transition resets the score quiet period");
+        check(settle.ready(ignored,2500L),
+            "score quiet period eventually ends");
+    }
+
     /** Diagnostic 18: no grid-preview coordinate can poison direct calibration. */
     static void diagnostic18ProxyCalibrationRegression() {
         check(DragCalibration.mayRecordVerifiedTargetSample(true,false),
@@ -1844,6 +1902,7 @@ public final class CoreChecks {
     }
 
     public static void main(String[] args) throws Exception {
+        diagnostic21IgnoredPickupRegression();
         diagnostic20TemporalOcclusionRegression();
         diagnostic19RedLTwoOldBoardRegression();
         diagnostic18ProxyCalibrationRegression();
