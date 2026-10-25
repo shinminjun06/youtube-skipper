@@ -194,10 +194,29 @@ class AutoService : AccessibilityService() {
         }
     }
     fun foregroundPackage(): String? = try { rootInActiveWindow?.packageName?.toString() } catch (_: Exception) { null }
+    /**
+     * Accessibility overlays appear INSIDE MediaProjection. A fixed panel,
+     * whether top or bottom docked, can cover a tall held piece. On the
+     * uploaded v1.3.5 failure a blue vertical 5-cell piece lost its bottom
+     * two cell centers under the bottom-right panel during PICKED.
+     *
+     * Keep all foreground controls available before starting, but remove
+     * them from BOTH the screen and captured pixels for the ENTIRE automatic
+     * session. The foreground notification's "종료" action remains available
+     * as an emergency stop. The panel reappears after halt/verification.
+     */
+    private fun syncControlsVisibility(running: Boolean) {
+        val hide = autoDock && running
+        floating?.visibility=if(hide) View.INVISIBLE else View.VISIBLE
+        guideView?.visibility=if(hide) View.INVISIBLE else View.VISIBLE
+        android.util.Log.i("BlockBlastAuto",
+            "capture-safe controls: "+(if(hide)"HIDDEN" else "VISIBLE"))
+    }
     fun setRunning(value: Boolean) { main.post {
         toggleButton?.text=if (value) "■ 중지" else "▶ 시작"
         modeButton?.isEnabled=!value
-        floating?.post { dockControls(autoDock) }
+        syncControlsVisibility(value)
+        if(!value) floating?.post {dockControls(autoDock)}
     } }
     /** Automatic play docks controls below the tray, never above the board. */
     private fun dockControls(automatic: Boolean) {
@@ -220,6 +239,7 @@ class AutoService : AccessibilityService() {
         autoDock=value
         modeButton?.text=if (value) "모드: 자동" else "모드: 추천"
         dockControls(value)
+        syncControlsVisibility(CaptureService.active?.isRunning()==true)
     } }
     fun setStatus(value: String) { main.post {
         statusText?.text=value
@@ -233,6 +253,9 @@ class AutoService : AccessibilityService() {
         val actualApp = foregroundPackage()
         lastGestureError = ""
         if (CaptureService.active?.isAutomatic()!=true) { lastGestureError="추천 모드에서는 자동 터치 금지"; done(false); return }
+        // Enforce clear screenshots before any held pointer is created,
+        // even if the main-thread running-state callback was delayed.
+        syncControlsVisibility(true)
         if (stroke != null || inFlight || cancelling) { lastGestureError = "이전 터치 정리 중"; done(false); return }
         if (expectedApp != null && actualApp != null && actualApp != expectedApp) { lastGestureError = "다른 앱이 앞에 있음"; done(false); return }
         fingerX = sx; fingerY = sy
@@ -279,10 +302,15 @@ class AutoService : AccessibilityService() {
     fun abortHold() {
         main.removeCallbacks(watchdog)
         if (cancelling || (stroke == null && !inFlight)) return
-        val target = statusText ?: return
-        val location = IntArray(2); target.getLocationOnScreen(location)
-        val x = location[0] + target.width*.5f
-        val y = location[1] + target.height*.5f
+        val target = statusText
+        val visible = floating?.visibility == View.VISIBLE && target != null
+        val location=IntArray(2)
+        if (visible) target!!.getLocationOnScreen(location)
+        // The full panel is invisible during autoplay. Tapping its former
+        // coordinates would hit the underlying Block Blast board; instead
+        // cancel with a fresh stroke on the top-left system screen corner.
+        val x=if(visible) location[0] + target!!.width*.5f else 2f
+        val y=if(visible) location[1] + target!!.height*.5f else 2f
         val pending = cancelPending
         session++; val epoch = session
         stroke = null; cancelPending = null; inFlight = true; cancelling = true
