@@ -763,9 +763,9 @@ public final class CoreChecks {
         // Shape-normalized model bias: fingerX = spriteX + width*.5 cell
         // + .16 cell; fingerY = spriteY + height*.5 cell + 3.1 cell.
         DragCalibration.Observation s1=new DragCalibration.Observation(
-            0,2,2,cell,350+1.16f*cell,500+4.1f*cell,350,500);
+            0,box.key,2,2,cell,350+1.16f*cell,500+4.1f*cell,350,500);
         DragCalibration.Observation s2=new DragCalibration.Observation(
-            0,2,2,cell,220+1.20f*cell,340+4.05f*cell,220,340);
+            0,box.key,2,2,cell,220+1.20f*cell,340+4.05f*cell,220,340);
         check(model.recordVerified(s1),"first independently verified placement accepted");
         check(model.confidence(0)==1,"one success is insufficient for fast path");
         check(model.predict(0,box,cell,360,525,720,1560)==null,
@@ -780,18 +780,18 @@ public final class CoreChecks {
             "slot 1 may not copy slot 0 calibration");
         Game.Piece one=new Game.Piece(0,0);
         float[] onePredicted=model.predict(0,one,cell,360,525,720,1560);
-        check(onePredicted!=null&&Math.abs(onePredicted[0]-(360+.68f*cell))<2f,
-            "different shape dimensions normalize around sprite midpoint");
+        check(onePredicted==null,
+            "same slot but different shape cannot inherit another block's predicted drag offset");
         check(model.predict(0,box,cell,360,1320,720,1560)==null,
             "offscreen learned finger position must fall back to staged drag");
         check(model.predict(0,box,cell*2,360,525,1440,3120)==null,
             "cell geometry changes must invalidate stale calibration");
         check(!model.recordVerified(new DragCalibration.Observation(
-            0,2,2,cell,Float.NaN,800,350,500)),
+            0,box.key,2,2,cell,Float.NaN,800,350,500)),
             "NaN motion sample cannot poison calibration");
         check(model.confidence(0)==2,"malformed sample does not erase valid model");
         check(model.recordVerified(new DragCalibration.Observation(
-            0,2,2,cell,350+3*cell,500+4.1f*cell,350,500)),
+            0,box.key,2,2,cell,350+3*cell,500+4.1f*cell,350,500)),
             "outlying but finite sample causes controlled relearning");
         check(model.confidence(0)==1 &&
               model.predict(0,box,cell,360,525,720,1560)==null,
@@ -799,6 +799,60 @@ public final class CoreChecks {
         model.reset();
         check(model.confirmedSamples()==0&&model.confidence(0)==0,
             "session reset forgets device-specific calibration");
+    }
+
+    /**
+     * Uploaded v1.4.3 diagnostic (9): direct FAST drag of slot 1's BLUE
+     * vertical 1x4 near the last board column. 19 total verified placements,
+     * but only ONE prior direct success. The enlarged blue bar appears at
+     * x~645,y~828 instead of the planned x600.125,y687.5, and extends
+     * beyond the right capture edge (720px), causing ALIGN NO_HELD_MATCH.
+     *
+     * A per-slot estimate learned from other shapes is not evidence for this
+     * 1x4 shape, and an edge target is dangerous even when this same exact
+     * piece has two agreeing successes. Never modify full-sprite matching to
+     * tolerate a clipped offscreen shape.
+     */
+    static void diagnostic9ExactShapeAndEdgeRegression() {
+        float cell=79.875f;
+        DragCalibration calibration=new DragCalibration();
+        Game.Piece oldSlotShape=new Game.Piece(0,0,1,0,0,1,1,1);
+        Game.Piece blueFour=new Game.Piece(0,0,0,1,0,2,0,3);
+        Game.Piece anotherFour=new Game.Piece(0,0,1,0,2,0,3,0);
+        for(int i=0;i<3;i++) {
+            float x=300+i*3;
+            check(calibration.recordVerified(new DragCalibration.Observation(
+                1,oldSlotShape.key,2,2,cell,x+cell*1.13f,
+                500+cell*4.13f,x,500)),
+                "valid old-slot placement can train its own piece shape");
+        }
+        check(calibration.confidence(1)>=2,
+            "historical mixed-shape slot can be calibrated");
+        check(calibration.confidence(1,blueFour.key)==0,
+            "blue 1x4 exact shape remains uncalibrated");
+        check(calibration.predict(1,blueFour,cell,600.125f,687.5f,720,1560)==null,
+            "slot-wide 2x2 calibration cannot direct blue 1x4 to right edge");
+        for(int i=0;i<2;i++) {
+            float x=280+i*4,y=550+i*4;
+            check(calibration.recordVerified(new DragCalibration.Observation(
+                1,blueFour.key,1,4,cell,x+cell*.7f,y+cell*5.8f,x,y)),
+                "actual blue 1x4 successful placement trains only exact shape");
+        }
+        check(calibration.confidence(1,blueFour.key)==2,
+            "two agreeing verified blue 1x4 placements are recognized");
+        float[] center=calibration.predict(1,blueFour,cell,440,687.5f,720,1560);
+        check(center!=null && Math.abs(center[0]-(440+cell*.7f))<1f,
+            "exact shape may still use direct placement for an interior target");
+        check(calibration.predict(1,blueFour,cell,600.125f,687.5f,720,1560)==null,
+            "same-shape training must not risk clipping at x600.125 right edge");
+        check(calibration.predict(1,blueFour,cell,41,687.5f,720,1560)==null,
+            "leftmost board column is equally ineligible for predictive mode");
+        check(calibration.predict(1,anotherFour,cell,440,687.5f,720,1560)==null,
+            "same slot and same number of blocks but different geometry cannot share model");
+        check(645+cell>720,
+            "uploaded x645 whole sprite could not fit inside 720px screenshot");
+        check(calibration.confirmedSamples()==5,
+            "unrelated verified placements remain correctly counted");
     }
 
     static int simulateCorrection(float cells,float responseGain,boolean adaptive) {
@@ -1068,7 +1122,8 @@ public final class CoreChecks {
         check(pace.tier()==AdaptivePace.Tier.BASE,"new session cannot inherit old fast mode");
     }
 
-    public static void main(String[] args) throws Exception {        successGatedSpeedRegression();
+    public static void main(String[] args) throws Exception {
+        diagnostic9ExactShapeAndEdgeRegression();        successGatedSpeedRegression();
         measuredSpriteResponseRegression();
 
         verticalFiveSelectedTrayOverlapRegression();        verifiedDragCalibrationRegression();
