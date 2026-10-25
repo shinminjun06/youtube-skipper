@@ -160,3 +160,24 @@ if ! grep -Fq 'successGatedSpeedRegression();' tests/java/com/pivotry/blockauto/
   echo 'FAIL: speed calibration / fallback regression removed' >&2
   exit 1
 fi
+
+# Uploaded v1.4.3 diagnostic (9): a slot-wide learned offset was reused
+# for a blue 1x4 at the rightmost board column; the resulting sprite was
+# partially outside the 720px capture and could not be tracked.
+# Fast gesture tiers remain intact; only unsafe direct prediction is gated.
+if ! grep -Fq 'shape.piece.key,' app/src/main/java/com/pivotry/blockauto/CaptureService.kt; then
+  echo 'FAIL: direct-drag training must record exact block shape' >&2
+  exit 1
+fi
+if ! grep -Fq 'estimates.get(key(slot,piece.key))' app/src/main/java/com/pivotry/blockauto/core/DragCalibration.java; then
+  echo 'FAIL: calibration must be keyed by slot AND exact shape' >&2
+  exit 1
+fi
+if ! grep -Fq 'desiredPieceX+piece.w*cell>width-safety' app/src/main/java/com/pivotry/blockauto/core/DragCalibration.java; then
+  echo 'FAIL: predicted right-edge block clipping is not blocked' >&2
+  exit 1
+fi
+if ! grep -Fq 'diagnostic9ExactShapeAndEdgeRegression();' tests/java/com/pivotry/blockauto/core/CoreChecks.java; then
+  echo 'FAIL: direct-drag near-edge diagnostic 9 regression was removed' >&2
+  exit 1
+fi
