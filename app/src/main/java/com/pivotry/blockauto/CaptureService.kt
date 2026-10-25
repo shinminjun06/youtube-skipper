@@ -418,24 +418,27 @@ class CaptureService : Service() {
         val targetMatch=if(phase==Phase.ALIGN)
             DragAlignment.locateNear(image,beforeImage!!,frame,shape,targetX,targetY)
             else null
-        // First pickup test is strict. On its one reverse retry the lifted
-        // shape may overlap original miniature tray pixels of the SAME color.
-        // Use the retry-only all-cells shape/motion checker with relaxed
-        // novelty of overlapping centers. It still requires the correct
-        // left/right motion and never authorizes a drop by itself.
+        // First try the all-centers-changed directed matcher. If it rejects
+        // a moving piece solely because its enlarged sprite overlaps the
+        // ORIGINAL selected tray thumbnail, the source-mask-aware matcher
+        // provides a second STRONGLY verified reading of the SAME frame pair.
+        // Unlike the previous retry-only path, this saves an unnecessary
+        // reverse gesture whenever full-shape color, temporal displacement,
+        // command direction and global uniqueness are already confirmed.
+        // Neither PICKED matcher can release a piece at a destination.
         val directed=if(phase==Phase.PICKED)
             DragAlignment.locateMoving(image,beforeImage!!,probeImage!!,frame,shape,
                 fingerX,fingerY,probeDX,probeDY)
             else null
-        val retryRecovery=if(phase==Phase.PICKED && directed==null && corrections==1)
+        val sourceOverlapRecovery=if(phase==Phase.PICKED && directed==null)
             DragAlignment.locatePickedAfterRetry(image,beforeImage!!,probeImage!!,
                 frame,shape,fingerX,fingerY,probeDX,probeDY)
             else null
-        val found=if(phase==Phase.PICKED) directed ?: retryRecovery
+        val found=if(phase==Phase.PICKED) directed ?: sourceOverlapRecovery
             else targetMatch ?: DragAlignment.locate(image,beforeImage!!,frame,shape,fingerX,fingerY)
-        if(retryRecovery!=null)
-            android.util.Log.i("BlockBlastAuto","reverse pickup probe confirmed despite tray color overlap; "+
-                "directed complete shape at "+retryRecovery.x+","+retryRecovery.y)
+        if(sourceOverlapRecovery!=null)
+            android.util.Log.i("BlockBlastAuto","pickup confirmed with selected-tray source mask; "+
+                "directed unique shape at "+sourceOverlapRecovery.x+","+sourceOverlapRecovery.y)
         if (!valid(epoch)) return
         if (found == null) {
             observed = null
