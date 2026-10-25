@@ -1,56 +1,84 @@
 package com.pivotry.blockauto.core;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /**
- * Verified-only online calibration for the Android held-piece touch offset.
+ * Verified-only calibration for Android held-piece touch offset.
  *
- * A vendor/game may draw the dragged piece several cells ABOVE its finger.
- * Never infer that offset from a pickup screenshot alone; call recordVerified
- * only after the game board AND consumed tray slot match MoveVerifier.
+ * A visual drag offset is not transferable between different block shapes,
+ * even if they appear in the SAME tray slot. User v1.4.3 diagnostic (9):
+ * slot 1 learned multiple times (19 successful moves overall) but a blue
+ * vertical 1x4 was directed to x=600,y=688 and rendered at x=645,y=828,
+ * clipping the right edge. Never extrapolate a slot-wide calibration across
+ * shape geometry; also avoid direct mode when the preview is near capture
+ * edges, where a small prediction error would make it untrackable.
  *
- * Does NOT inject touches or authorize release. Android always re-observes
- * the requested cells before lifting its finger.
+ * Call recordVerified ONLY after stable MoveVerifier board + tray success.
+ * This class cannot inject touches or authorize a release.
  */
 public final class DragCalibration {
     public static final class Observation {
         public final int slot,width,height;
+        public final String pieceKey;
         public final float cell,fingerX,fingerY,pieceX,pieceY;
-        public Observation(int slot,int width,int height,float cell,
+        public Observation(int slot,String pieceKey,int width,int height,float cell,
                 float fingerX,float fingerY,float pieceX,float pieceY) {
-            this.slot=slot;this.width=width;this.height=height;this.cell=cell;
+            this.slot=slot;this.pieceKey=pieceKey;
+            this.width=width;this.height=height;this.cell=cell;
             this.fingerX=fingerX;this.fingerY=fingerY;
             this.pieceX=pieceX;this.pieceY=pieceY;
+        }
+        /** Legacy tests may still create an unkeyed sample. It can never
+         * unlock direct mode for a real Game.Piece, which has a real key. */
+        @Deprecated public Observation(int slot,int width,int height,float cell,
+                float fingerX,float fingerY,float pieceX,float pieceY) {
+            this(slot,"UNKEYED",width,height,cell,fingerX,fingerY,pieceX,pieceY);
         }
     }
     private static final class Estimate {
         float normalizedX,normalizedY,cell;
         int agreements;
     }
-    private final Estimate[] slots=new Estimate[]{new Estimate(),new Estimate(),new Estimate()};
-    private int confirmedSamples=0;
-    public void reset(){
-        for(Estimate e:slots){e.agreements=0;e.cell=0;e.normalizedX=0;e.normalizedY=0;}
-        confirmedSamples=0;
-    }
+    private final LinkedHashMap<String,Estimate> estimates=new LinkedHashMap<>();
+    private int confirmedSamples;
+    public void reset(){estimates.clear();confirmedSamples=0;}
     public int confirmedSamples(){return confirmedSamples;}
     public int confidence(int slot){
-        return slot>=0&&slot<slots.length?slots[slot].agreements:0;
+        int result=0;
+        String prefix=slot+":";
+        for(Map.Entry<String,Estimate> e:estimates.entrySet())
+            if(e.getKey().startsWith(prefix))
+                result=Math.max(result,e.getValue().agreements);
+        return result;
     }
-    /** Invalid samples can never poison a previously valid learned offset. */
+    public int confidence(int slot,String pieceKey){
+        Estimate e=estimates.get(key(slot,pieceKey));
+        return e==null?0:e.agreements;
+    }
+    private static String key(int slot,String pieceKey){
+        return slot+":"+pieceKey;
+    }
+    /** Invalid samples can never poison an earlier valid offset. */
     public boolean recordVerified(Observation s){
-        if(s==null||s.slot<0||s.slot>=slots.length||s.width<1||s.width>8||
-           s.height<1||s.height>8||!finite(s.cell)||s.cell<=10||
-           !finite(s.fingerX)||!finite(s.fingerY)||
+        if(s==null||s.slot<0||s.slot>2||s.pieceKey==null||
+           s.pieceKey.length()<3||s.pieceKey.length()>160||
+           s.width<1||s.width>8||s.height<1||s.height>8||
+           !finite(s.cell)||s.cell<=10||!finite(s.fingerX)||!finite(s.fingerY)||
            !finite(s.pieceX)||!finite(s.pieceY))return false;
-        // Shape-normalized difference between finger point and sprite origin.
         final float x=(s.fingerX-s.pieceX)/s.cell-s.width*.5f;
         final float y=(s.fingerY-s.pieceY)/s.cell-s.height*.5f;
         if(!finite(x)||!finite(y)||Math.abs(x)>12f||Math.abs(y)>12f)return false;
-        Estimate e=slots[s.slot];
+        String id=key(s.slot,s.pieceKey);
+        Estimate e=estimates.get(id);
+        if(e==null) {
+            // Bound the on-device cache to avoid indefinite session growth.
+            if(estimates.size()>=48)estimates.remove(estimates.keySet().iterator().next());
+            e=new Estimate();
+            estimates.put(id,e);
+        }
         if(e.agreements==0||Math.abs(e.cell-s.cell)>s.cell*.04f ||
             Math.abs(e.normalizedX-x)>.33f||Math.abs(e.normalizedY-y)>.33f) {
-            // A changed device geometry, drag lift policy or outlying match
-            // clears readiness. Two agreeing actual successes are required
-            // again before direct placement becomes eligible.
             e.normalizedX=x;e.normalizedY=y;e.cell=s.cell;e.agreements=1;
         }else{
             float alpha=1f/Math.min(e.agreements+1,5);
@@ -62,15 +90,23 @@ public final class DragCalibration {
         return true;
     }
     /**
-     * Returns null until two actual placements by the same tray slot give
-     * agreeing offsets. Null also enforces screen-safe pointer geometry.
+     * Two independent verified successes for the EXACT slot + block shape
+     * unlock predictive mode, but never near any CAPTURE boundary. It is
+     * especially important to avoid the far-right board column: in the
+     * 720px field recording only 40px remains outside that last board cell.
      */
     public float[] predict(int slot,Game.Piece piece,float cell,
             float desiredPieceX,float desiredPieceY,int width,int height) {
-        if(slot<0||slot>=slots.length||piece==null||!finite(cell)||cell<=10 ||
+        if(slot<0||slot>2||piece==null||!finite(cell)||cell<=10 ||
            width<=0||height<=0||!finite(desiredPieceX)||!finite(desiredPieceY))return null;
-        Estimate e=slots[slot];
-        if(e.agreements<2||Math.abs(e.cell-cell)>cell*.04f)return null;
+        Estimate e=estimates.get(key(slot,piece.key));
+        if(e==null||e.agreements<2||Math.abs(e.cell-cell)>cell*.04f)return null;
+        // A near-edge prediction error otherwise clips the enlarged piece,
+        // so even a unique whole-shape tracker will report NO_HELD_MATCH.
+        final float safety=Math.max(10f,cell*.85f);
+        if(desiredPieceX<safety||desiredPieceY<safety||
+           desiredPieceX+piece.w*cell>width-safety||
+           desiredPieceY+piece.h*cell>height-safety)return null;
         float px=desiredPieceX+(piece.w*.5f+e.normalizedX)*cell;
         float py=desiredPieceY+(piece.h*.5f+e.normalizedY)*cell;
         float edge=Math.max(4,cell*.10f);
@@ -78,11 +114,7 @@ public final class DragCalibration {
            px>width-edge||py>height-edge)return null;
         return new float[]{px,py};
     }
-    /**
-     * Faster bounded position servo: far steps are about 88% of measured
-     * error with a three-cell cap; near a cell they slow to avoid snap jitter.
-     * The Android caller ALWAYS measures the sprite again after each step.
-     */
+    /** Legacy servo comparison kept for reproducible simulated benchmarks. */
     public static float correction(float error,float cell) {
         if(!finite(error)||!finite(cell)||cell<=0)
             throw new IllegalArgumentException("Invalid drag geometry");
