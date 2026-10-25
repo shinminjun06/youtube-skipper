@@ -99,7 +99,7 @@ class CaptureService : Service() {
         val stop = PendingIntent.getService(this,0,Intent(this,CaptureService::class.java).setAction("STOP"),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notification = Notification.Builder(this,"capture")
             .setSmallIcon(android.R.drawable.ic_media_play).setContentTitle("Block Blast Advisor + Auto")
-            .setContentText("화면은 기기 안에서만 분석합니다 · 눌러 종료")
+            .setContentText("자동 실행 중 조작창은 숨김 · 알림 종료로 정지")
             .setContentIntent(stop).setOngoing(true)
             .addAction(Notification.Action.Builder(null,"종료",stop).build()).build()
         startForeground(100,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
