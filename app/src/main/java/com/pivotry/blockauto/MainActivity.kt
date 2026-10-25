@@ -13,11 +13,24 @@ class MainActivity : Activity() {
     private val diagnosticRequest = 2002
     private val main = Handler(Looper.getMainLooper())
     private lateinit var state: TextView
+    private lateinit var selectedMode: TextView
+    private fun selectMode(auto: Boolean) {
+        getSharedPreferences("play_mode",MODE_PRIVATE).edit().putBoolean("auto",auto).apply()
+        val capture=CaptureService.active
+        if(capture!=null) capture.setAutomatic(auto)
+        else AutoService.live?.setAutomatic(auto)
+        selectedMode.text=if(auto) "현재 모드: 자동 플레이 (게임 화면에 직접 입력)" else "현재 모드: 하이라이트 추천 (자동 터치 없음)"
+        Toast.makeText(this,if(auto) "자동 모드 선택됨 · 화면 공유와 접근성 연결 후 시작하세요"
+            else "추천 모드 선택됨",Toast.LENGTH_SHORT).show()
+    }
     private val refresh = object : Runnable {
         override fun run() {
             val service = CaptureService.active
             state.text = "접근성: " + (if (AutoService.live != null) "연결됨" else "설정 필요") + "\n" +
                 (service?.statusMessage ?: "화면 공유를 시작하세요")
+            val automatic=service?.isAutomatic() ?: getSharedPreferences("play_mode",MODE_PRIVATE).getBoolean("auto",false)
+            selectedMode.text=if(automatic) "현재 모드: 자동 플레이 (게임 화면에 직접 입력)"
+                else "현재 모드: 하이라이트 추천 (자동 터치 없음)"
             main.postDelayed(this,500)
         }
     }
@@ -33,10 +46,14 @@ class MainActivity : Activity() {
             this.text = text; textSize = size; setPadding(0,(8*dp).toInt(),0,(14*dp).toInt()); root.addView(this)
         }
         fun button(text: String,action: ()->Unit) { root.addView(Button(this).apply { this.text = text; setOnClickListener { action() } }) }
-        label("Block Blast Advisor + Auto",27f)
-        label("${BuildConfig.VERSION_NAME} · 추천 + 선택형 자동 플레이",14f)
+        label("Block Blast AutoPlay",27f)
+        label("v${BuildConfig.VERSION_NAME} · AUTO 버전 · 별도 설치 앱",14f)
         state = label("준비 중",16f).apply { setTextIsSelectable(true) }
-        label("플로팅 창에서 추천 또는 자동 모드를 선택할 수 있습니다. 기본값은 추천 모드입니다. COMBO가 화면에 표시되면 자동 인식합니다.",14f)
+        selectedMode=label("현재 모드: 확인 중",18f)
+        button("자동 플레이 모드 선택") { selectMode(true) }
+        button("하이라이트 추천 모드 선택") { selectMode(false) }
+        label("위 버튼 또는 게임 위 플로팅 창에서 모드를 선택할 수 있습니다. 자동 모드를 선택한 경우에만 게임에 드래그를 보냅니다.",14f)
+        label("콤보는 COMBO 표시가 있을 때만 인식하고, 평소에는 확인된 줄 삭제를 추적합니다.",14f)
         label("1. 접근성을 연결하세요. 추천 표시와, 자동 모드에서만 드래그 입력을 보내기 위해 사용합니다.")
         button("접근성 설정 열기") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         label("2. 전체 화면 공유를 허용하세요. 화면은 기기 안에서만 분석하며 외부로 보내지 않습니다.")
@@ -48,7 +65,7 @@ class MainActivity : Activity() {
                 @Suppress("DEPRECATION") startActivityForResult(capture,captureRequest)
             }
         }
-        label("3. 블록 블라스트 세로 화면에서 플로팅 창의 모드: 추천/자동을 선택하고 ▶ 시작을 누르세요.")
+        label("3. 모드를 선택한 뒤 블록 블라스트를 열고 게임 위 플로팅 창에서 ▶ 시작을 누르세요.")
         label("추천 모드에서는 초록색 표시를 보고 직접 놓으세요. 자동 모드에서만 앱이 블록을 드래그하며, 설치 결과를 검증합니다.",14f)
         label("정지 버튼을 누르면 추천 또는 조작을 멈춥니다. 화면을 회전했거나 공유가 종료되면 다시 공유하세요.",14f)
         button("정지") { CaptureService.active?.halt("사용자가 정지했습니다") }
@@ -80,7 +97,7 @@ class MainActivity : Activity() {
         }
         if (requestCode == captureRequest && resultCode == RESULT_OK && data != null) {
             startForegroundService(Intent(this,CaptureService::class.java).apply { putExtra("resultCode",resultCode); putExtra("data",data) })
-            Toast.makeText(this,"게임으로 이동해 ▶ 자동 시작을 누르세요",Toast.LENGTH_LONG).show()
+            Toast.makeText(this,"게임으로 이동해 플로팅 창의 ▶ 시작을 누르세요",Toast.LENGTH_LONG).show()
         }
     }
 }
