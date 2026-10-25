@@ -298,6 +298,9 @@ class CaptureService : Service() {
             } else if (now-phaseAt > 3200) {
                 pendingDragSample=null
                 if (verifier!!.unchanged(frame) && retries < 1) {
+                    // A visually unchanged board after release is a real
+                    // game rejection; restore known-good timings for retry.
+                    pace.uncertainty()
                     retries++; retrySignature = frame.signature(); phase = Phase.IDLE; stableSignature = ""
                     actionFloor = Long.MIN_VALUE; status("설치 안 됨 · 새 화면으로 1회 재시도")
                 } else halt("설치 결과 불일치 · 잘못된 연속 조작을 막기 위해 정지")
