@@ -211,8 +211,7 @@ public final class DragAlignment {
             // entirely new color samples, plus strong full-shape color/edges.
             if(value<.86f)continue;
             if(allowThumbnailOverlap &&
-                newlyPaintedCenters(im,before,shape,x,y,cell) <
-                    (shape.piece.xs.length+1)/2)continue;
+                !retryCentersAreNewOrOwnThumbnail(im,before,frame,shape,x,y))continue;
             float[] seed=null;
             for(float[] candidate:seeds)if(Math.abs(x-candidate[0])<cell*.55f&&Math.abs(y-candidate[1])<cell*.55f){seed=candidate;break;}
             if(seed==null) {
@@ -230,18 +229,50 @@ public final class DragAlignment {
         }
         return result;
     }
-    private static int newlyPaintedCenters(Game.Image im,Game.Image before,
-            Game.Shape shape,float x,float y,float cell) {
-        int changed=0;
-        for(int i=0;i<shape.piece.xs.length;i++) {
-            float cx=x+(shape.piece.xs[i]+.5f)*cell;
-            float cy=y+(shape.piece.ys[i]+.5f)*cell;
-            int color=im.at(cx,cy);
-            if(same(color,shape.color) &&
-               Recognizer.distance(color,before.at(cx,cy))>60)changed++;
+    /**
+     * All occupied centers must either be newly painted OR lie inside this
+     * exact tray slot's miniature source sprite. Previous generic 50% novelty
+     * failed on the uploaded v1.4.0 green 1x5: its large lifted shape
+     * overlapped THREE mini-tray cell centers (y=1114/1194/1274), leaving
+     * only two changed centers even though the whole piece moved -78px.
+     *
+     * A same-colored STATIC board cell OUTSIDE this source slot's small
+     * thumbnail is never allowed to complete a picked piece. Require >=2
+     * independently new centers for long pieces, and the existing >55%
+     * newly colored sample ratio, unique candidates and directional proof.
+     */
+    private static boolean retryCentersAreNewOrOwnThumbnail(
+            Game.Image im,Game.Image before,Game.Frame frame,Game.Shape shape,
+            float x,float y) {
+        final Game.Piece p=shape.piece;
+        final float cell=frame.cell;
+        final float mini=cell*.46f;
+        final float thumbnailHalfX=mini*(p.w+.15f);
+        final float thumbnailHalfY=mini*(p.h*.60f+.25f);
+        final float trayTop=frame.top+8f*cell+cell*.12f;
+        int novel=0;
+        for(int i=0;i<p.xs.length;i++) {
+            final float cx=x+(p.xs[i]+.5f)*cell;
+            final float cy=y+(p.ys[i]+.5f)*cell;
+            final int current=im.at(cx,cy), original=before.at(cx,cy);
+            if(!same(current,shape.color))return false;
+            if(Recognizer.distance(current,original)>60) {
+                novel++;
+                continue;
+            }
+            // Source thumbnail may be a little off-center from the input
+            // point (notably on L pieces where pickX is a noncentral cell).
+            // Only the lower TRAY region and the selected piece's own source
+            // footprint receive this exemption.
+            boolean ownThumbnail=cy>=trayTop &&
+                Math.abs(cx-shape.pickX)<=thumbnailHalfX &&
+                Math.abs(cy-shape.pickY)<=thumbnailHalfY &&
+                same(original,shape.color);
+            if(!ownThumbnail)return false;
         }
-        return changed;
+        return novel>=Math.min(2,p.xs.length);
     }
+
     private static Origin search(Game.Image im,Game.Image before,Game.Frame frame,Game.Shape shape,float minX,float maxX,float minY,float maxY,float minNovel,boolean changedCenters) {
         if(im.width!=before.width||im.height!=before.height)return null;
         float cell=frame.cell,step=Math.max(2,cell*.08f);
