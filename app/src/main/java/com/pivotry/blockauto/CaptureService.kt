@@ -343,8 +343,18 @@ class CaptureService : Service() {
             gesture(epoch,Phase.PICKED) { service,done -> service.moveHeld(fingerX*scaleX(frame),fingerY*scaleY(frame),true,320,done) }
             return
         }
-        val found = if (phase == Phase.PICKED) DragAlignment.locateMoving(image,beforeImage!!,probeImage!!,frame,shape,fingerX,fingerY,probeDX,probeDY)
-            else DragAlignment.locateNear(image,beforeImage!!,frame,shape,targetX,targetY)
+        // The target-local search is intentionally strict: only that match
+        // can authorize a drop. If the game snaps the held piece far away
+        // (v1.3.1 diagnostic: actual origin ~523,273 vs target ~440,524),
+        // recover its UNIQUE newly rendered position by a wider search and
+        // correct the pointer while keeping the finger down.
+        val targetMatch=if(phase==Phase.ALIGN)
+            DragAlignment.locateNear(image,beforeImage!!,frame,shape,targetX,targetY)
+            else null
+        val found=if(phase==Phase.PICKED)
+            DragAlignment.locateMoving(image,beforeImage!!,probeImage!!,frame,shape,
+                fingerX,fingerY,probeDX,probeDY)
+            else targetMatch ?: DragAlignment.locate(image,beforeImage!!,frame,shape,fingerX,fingerY)
         if (!valid(epoch)) return
         if (found == null) {
             observed = null
@@ -375,7 +385,8 @@ class CaptureService : Service() {
         }
         if (now-observedAt < 180) return
         val dx = targetX-found.x; val dy = targetY-found.y
-        android.util.Log.i("BlockBlastAuto","align "+phase+" origin="+found.x+","+found.y+" delta="+dx+","+dy)
+        android.util.Log.i("BlockBlastAuto","align "+phase+" match="+(if(targetMatch!=null)"TARGET" else "RECOVERY")+
+            " origin="+found.x+","+found.y+" delta="+dx+","+dy)
         // Never let a weak visual match trigger ACTION_UP. The held object must
         // lie fully within the intended legal board rectangle.
         val targetWithinBoard = targetX >= frame.left-frame.cell*.08f &&
@@ -387,11 +398,17 @@ class CaptureService : Service() {
             halt("목표 위치 오류 · 드래그 취소")
             return
         }
-        if (phase == Phase.ALIGN && abs(dx)<frame.cell*.13 && abs(dy)<frame.cell*.13) {
+        // Never release based only on the more lenient occlusion-tolerant
+        // recovery match. The usual high-confidence target-area match MUST
+        // succeed before sending ACTION_UP.
+        if (phase == Phase.ALIGN && targetMatch!=null &&
+            abs(dx)<frame.cell*.13 && abs(dy)<frame.cell*.13) {
             status("정렬 확인 · 블록 놓기")
             gesture(epoch,Phase.VERIFY) { service,done -> service.moveHeld(fingerX*scaleX(frame),fingerY*scaleY(frame),false,150,done) }
         } else {
-            if (corrections++ >= 3) {
+            // Allow a few bounded recovery moves for screen snap offsets.
+            // No uncertainty bypass: 5 failed corrections still stop safely.
+            if (corrections++ >= 5) {
                 freezeFailure(image,"CORRECTION_LIMIT")
                 halt("위치 보정 실패 · 진단 저장 후 정지")
                 return
