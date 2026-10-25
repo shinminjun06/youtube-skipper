@@ -844,7 +844,80 @@ public final class CoreChecks {
             saved*100,count,oldTotal,newTotal);
     }
 
-    public static void main(String[] args) throws Exception {        verifiedDragCalibrationRegression();
+    /**
+     * Exact geometry from PRIVATE v1.4.0 diagnostics (7), NOT screenshots:
+     * 720x1560, green vertical 1x5, thumbnail at x=342..377/y=1103..1282.
+     * Full lifted image goes x=405 -> x=327 (-78px) after -51.9187px
+     * controller probe. Three final cell centers overlap the SOURCE tray
+     * thumbnail and are not new vs before; the other two genuinely move.
+     * Long-piece tracking must accept ONLY that known-source exemption.
+     */
+    static void verticalFiveSelectedTrayOverlapRegression() {
+        int w=720,h=1560;
+        float cell=79.875f;
+        int green=0xff31b642;
+        int[] bg=new int[w*h];
+        java.util.Arrays.fill(bg,0xff3a5194);
+        for(int i=0;i<5;i++) {
+            int minY=1103+i*36;
+            for(int y=minY;y<minY+35;y++)
+                for(int x=342;x<378;x++)bg[y*w+x]=green;
+        }
+        Game.Image before=new Game.Image(w,h,bg);
+        Game.Frame frame=new Game.Frame(0x7f7f7f7f7f0082c0L,
+            java.util.Collections.emptyList(),41,368,cell,w,h,1);
+        Game.Piece vertical=new Game.Piece(0,0,0,1,0,2,0,3,0,4);
+        Game.Shape selected=new Game.Shape(1,vertical,359.5f,1193,green);
+        Game.Image previous=lifted(before,frame,selected,405,1074);
+        Game.Image current=lifted(before,frame,selected,327,1074);
+        // Before-image overlay leaves 3 stationary green centers, but new
+        // sprite is 100% complete and motion direction is correct.
+        int fresh=0;
+        for(int i=0;i<5;i++) {
+            int px=(int)(327+cell*.5f),py=(int)(1074+(i+.5f)*cell);
+            if(Recognizer.distance(current.at(px,py),before.at(px,py))>60)fresh++;
+        }
+        check(fresh==2,"uploaded 1x5 failure has exactly two changed centers");
+        check(DragAlignment.locateMoving(current,before,previous,frame,selected,
+            363.99377f,1366.4375f,-51.918747f,0)==null,
+            "strict normal match refuses source thumbnail overlaps");
+        DragAlignment.Origin recovered=DragAlignment.locatePickedAfterRetry(
+            current,before,previous,frame,selected,
+            363.99377f,1366.4375f,-51.918747f,0);
+        check(recovered!=null && Math.abs(recovered.x-327)<cell*.15f &&
+            Math.abs(recovered.y-1074)<cell*.15f,
+            "retry-only match follows actually left-moving complete green bar");
+        check(DragAlignment.locatePickedAfterRetry(previous,before,current,
+            frame,selected,363.99377f,1366.4375f,-51.918747f,0)==null,
+            "reverse motion must be rejected even with tray overlap");
+        check(DragAlignment.locatePickedAfterRetry(current,before,current,
+            frame,selected,363.99377f,1366.4375f,-51.918747f,0)==null,
+            "static green bar must not qualify as motion");
+        check(DragAlignment.locatePickedAfterRetry(before,before,previous,
+            frame,selected,363.99377f,1366.4375f,-51.918747f,0)==null,
+            "source thumbnail alone cannot qualify as a picked long bar");
+
+        // A pre-existing same-colored board/tray object OUTSIDE the source
+        // thumbnail must never gain the exemption, even if a large green
+        // shape appears later at that same location.
+        int[] wrong=bg.clone();
+        int cX=(int)(327+cell*.5f),cY=(int)(1074+3.5f*cell);
+        for(int y=cY-5;y<cY+5;y++)for(int x=cX-5;x<cX+5;x++)
+            wrong[y*w+x]=green;
+        Game.Image badBefore=new Game.Image(w,h,wrong);
+        Game.Image badPrev=lifted(badBefore,frame,selected,405,1074);
+        Game.Image badNow=lifted(badBefore,frame,selected,327,1074);
+        check(DragAlignment.locatePickedAfterRetry(badNow,badBefore,badPrev,
+            frame,selected,363.99377f,1366.4375f,-51.918747f,0)==null,
+            "unrelated unchanged green center outside source cannot authorize pickup");
+        Game.Image duplicate=lifted(current,frame,selected,520,1074);
+        check(DragAlignment.locatePickedAfterRetry(duplicate,before,previous,
+            frame,selected,363.99377f,1366.4375f,-51.918747f,0)==null,
+            "two possible five-cell green sprites are ambiguous");
+    }
+
+    public static void main(String[] args) throws Exception {
+        verticalFiveSelectedTrayOverlapRegression();        verifiedDragCalibrationRegression();
         adaptiveServoComparison();
         thumbnailOverlapPickedMotionRegression();
         verticalFiveBottomOverlayRegression();
