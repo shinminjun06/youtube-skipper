@@ -351,10 +351,11 @@ class CaptureService : Service() {
         val targetMatch=if(phase==Phase.ALIGN)
             DragAlignment.locateNear(image,beforeImage!!,frame,shape,targetX,targetY)
             else null
-        // The first pickup test remains strictly direction-checked.
-        // On its SINGLE reverse retry, an animation may still display the
-        // preceding +X gesture while the latest command was -X. Only then
-        // permit full-shape temporal tracking, and NEVER release based on it.
+        // First pickup test is strict. On its one reverse retry the lifted
+        // shape may overlap original miniature tray pixels of the SAME color.
+        // Use the retry-only all-cells shape/motion checker with relaxed
+        // novelty of overlapping centers. It still requires the correct
+        // left/right motion and never authorizes a drop by itself.
         val directed=if(phase==Phase.PICKED)
             DragAlignment.locateMoving(image,beforeImage!!,probeImage!!,frame,shape,
                 fingerX,fingerY,probeDX,probeDY)
@@ -366,8 +367,8 @@ class CaptureService : Service() {
         val found=if(phase==Phase.PICKED) directed ?: retryRecovery
             else targetMatch ?: DragAlignment.locate(image,beforeImage!!,frame,shape,fingerX,fingerY)
         if(retryRecovery!=null)
-            android.util.Log.i("BlockBlastAuto","reverse pickup probe had delayed sprite motion; "+
-                "unique complete shape at "+retryRecovery.x+","+retryRecovery.y)
+            android.util.Log.i("BlockBlastAuto","reverse pickup probe confirmed despite tray color overlap; "+
+                "directed complete shape at "+retryRecovery.x+","+retryRecovery.y)
         if (!valid(epoch)) return
         if (found == null) {
             observed = null
