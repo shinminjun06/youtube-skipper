@@ -45,3 +45,15 @@ if ! grep -Fq 'android:canPerformGestures="true"' app/src/main/res/xml/accessibi
   echo 'FAIL: auto mode needs accessibility gesture permission' >&2
   exit 1
 fi
+
+# Prevent regressions of the v1.3.3 yellow-T occlusion failure.
+# Auto controls must be BELOW the play area; alignment jumps must be
+# bounded rather than sending the full measured pixel error at once.
+if ! grep -Fq 'params.gravity=if(automatic) Gravity.BOTTOM or Gravity.END' app/src/main/java/com/pivotry/blockauto/AutoService.kt; then
+  echo 'FAIL: floating controls can obscure held blocks in auto mode' >&2
+  exit 1
+fi
+if ! grep -Fq 'val stepY=DragStep.axis(dy,frame.cell)' app/src/main/java/com/pivotry/blockauto/CaptureService.kt; then
+  echo 'FAIL: bounded held-block position correction missing' >&2
+  exit 1
+fi
