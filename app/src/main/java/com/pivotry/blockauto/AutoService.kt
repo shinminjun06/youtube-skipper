@@ -306,9 +306,12 @@ class AutoService : AccessibilityService() {
     /** A fresh (non-continuing) gesture cancels the previous pointer with CANCEL,
      * including an in-flight terminating stroke. Its tap lands on our neutral
      * overlay, never on the game or another app. Do not wait for a pending UP. */
-    fun abortHold() {
+    fun abortHold(afterCancel: (() -> Unit)? = null) {
         main.removeCallbacks(watchdog)
-        if (cancelling || (stroke == null && !inFlight)) return
+        if (cancelling || (stroke == null && !inFlight)) {
+            if (!cancelling) afterCancel?.invoke()
+            return
+        }
         val target = statusText
         val visible = floating?.visibility == View.VISIBLE && target != null
         val location=IntArray(2)
@@ -322,7 +325,10 @@ class AutoService : AccessibilityService() {
         session++; val epoch = session
         stroke = null; cancelPending = null; inFlight = true; cancelling = true
         pending?.invoke()
-        fun finished() { if (session == epoch) { inFlight = false; cancelling = false } }
+        fun finished() { if (session == epoch) {
+            inFlight = false; cancelling = false
+            afterCancel?.invoke()
+        } }
         try {
             val cancel = GestureDescription.Builder().addStroke(
                 GestureDescription.StrokeDescription(Path().apply { moveTo(x,y) },0,1,false)
