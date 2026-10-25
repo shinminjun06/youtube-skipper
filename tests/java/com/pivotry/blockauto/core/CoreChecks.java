@@ -1076,13 +1076,13 @@ public final class CoreChecks {
         // below that preview, at the actual finger ~386,836.
         int w=720,h=1560;
         int background=0xff212852,face=0xff21aede,shade=0xff006da4;
-        int[] base=new int[w*h];Arrays.fill(base,background);
+        int[] base=new int[w*h];java.util.Arrays.fill(base,background);
         Game.Image before=new Game.Image(w,h,base);
         int[] moving=base.clone();
         float cell=79.875f,left=41f,top=368f;
         Game.Piece vertical=new Game.Piece(0,0,0,1,0,2,0,3);
         Game.Shape selected=new Game.Shape(1,vertical,359.5f,1173.5f,0xff31b6e6);
-        Game.Frame frame=new Game.Frame(0L,Arrays.asList(selected),
+        Game.Frame frame=new Game.Frame(0L,java.util.Arrays.asList(selected),
             left,top,cell,w,h,1f);
         // Approximate the actual beveled face: the top is bright but
         // the lower half is deeply shaded yet still has the cyan hue.
