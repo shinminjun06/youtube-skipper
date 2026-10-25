@@ -621,16 +621,17 @@ public final class CoreChecks {
      * private diagnostic screenshots in the repository.
      */
     static void rightOfFingerPickupRegression() throws Exception {
-        Game.Image fixture=load("empty-gold.png");
-        Game.Frame frame=Recognizer.read(fixture);
-        check(frame!=null&&fixture.width==720&&fixture.height==1560,
-            "720x1560 reference for the v1.3.4 diagnostic");
+        // The existing screenshot fixtures use a different resolution.
+        // Use the exact 720x1560 metadata from this uploaded diagnostic,
+        // without committing the user's private before/probe/held images.
+        Game.Frame frame=new Game.Frame(0L,java.util.Collections.emptyList(),
+            41f,368f,79.875f,720,1560,1f);
         float cell=frame.cell;
         Game.Piece vertical2=new Game.Piece(0,0,0,1);
         Game.Shape purple=new Game.Shape(0,vertical2,149.5f,1174f,0xffa65be1);
-        int[] pixels=new int[fixture.width*fixture.height];
+        int[] pixels=new int[frame.width*frame.height];
         java.util.Arrays.fill(pixels,0xff243353);
-        Game.Image baseline=new Game.Image(fixture.width,fixture.height,pixels);
+        Game.Image baseline=new Game.Image(frame.width,frame.height,pixels);
         Game.Image old=lifted(baseline,frame,purple,511,1043);
         Game.Image latest=lifted(baseline,frame,purple,433,1043);
         float oldFingerX=416f,newFingerX=364f,fingerY=1246.625f;
