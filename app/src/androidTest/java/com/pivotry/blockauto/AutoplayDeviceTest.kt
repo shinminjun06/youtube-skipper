@@ -29,7 +29,7 @@ class AutoplayDeviceTest {
     @Before fun setup() {
         ui
         // UTP may reinstall/force-stop the target after a workflow enables it.
-        shell("settings put secure enabled_accessibility_services com.pivotry.blockauto/com.pivotry.blockauto.AutoService")
+        shell("settings put secure enabled_accessibility_services com.pivotry.blockauto.autoplay/com.pivotry.blockauto.AutoService")
         shell("settings put secure accessibility_enabled 1")
         await("accessibility service: "+shell("settings get secure enabled_accessibility_services")) { AutoService.live!=null }
     }
