@@ -4,7 +4,7 @@ android {
  compileSdk = 35
  defaultConfig {
   applicationId = "com.pivotry.blockauto.autoplay"; minSdk = 30; targetSdk = 34
-  versionCode = 27; versionName = "1.3.1"
+  versionCode = 28; versionName = "1.3.2"
   testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
  }
  buildFeatures { buildConfig = true }
