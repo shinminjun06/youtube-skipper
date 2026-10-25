@@ -600,11 +600,10 @@ public final class DragAlignment {
      * is restricted to the staged ALIGN phase by its caller; it NEVER
      * authorizes releasing a piece at the target on its own.
      *
-     * Require n-1 new centers and ONE unchanged center belonging to an
-     * occupied same-color board tile; never accept any unrelated overlay,
-     * tray thumbnail, or multiple old centers. Check the whole piece and
-     * preserve uniqueness. This supports 2x3 rectangles and shifted 3x2
-     * tetrominoes without relaxing the ordinary target/drop conditions.
+     * Normally requires n-1 new centers and one confirmed old board center.
+     * Diagnostic 19 permits EXACTLY TWO old red centers only for the specific
+     * five-cell L at its two vertical endpoints. The other three centers
+     * must be fresh. Still correction-only; never authorize releasing.
      */
     public static Origin locateOverOccupiedBoard(Game.Image im,Game.Image before,
             Game.Frame frame,Game.Shape shape,float fingerX,float fingerY){
@@ -632,7 +631,7 @@ public final class DragAlignment {
             float strength=score(im,before,shape.piece,shape.color,
                 x,y,cell,minimumNovelty,false);
             if(strength<.89f||
-               !oneOldBoardCenter(im,before,frame,shape,x,y))continue;
+               !verifiedOccupiedCenters(im,before,frame,shape,x,y))continue;
             float[] group=null;
             for(float[] c:seeds)if(Math.abs(c[0]-x)<cell*.55f &&
                                Math.abs(c[1]-y)<cell*.55f){group=c;break;}
@@ -647,14 +646,22 @@ public final class DragAlignment {
         float[] best=seeds.get(0);
         Origin found=refine(im,before,frame,shape,minX,maxX,minY,maxY,
             minimumNovelty,false,best[2],best[3],best[4]);
-        return oneOldBoardCenter(im,before,frame,shape,found.x,found.y)
-            ?found:null;
+        if(verifiedOccupiedCenters(im,before,frame,shape,found.x,found.y))
+            return found;
+        // Preserve a genuinely validated search seed when the plateau
+        // refinement drifts onto a different old/new center boundary.
+        return verifiedOccupiedCenters(im,before,frame,shape,best[2],best[3])
+            ?new Origin(best[2],best[3],best[4]):null;
     }
 
-    private static boolean oneOldBoardCenter(Game.Image im,Game.Image before,
+    private static boolean verifiedOccupiedCenters(Game.Image im,Game.Image before,
             Game.Frame frame,Game.Shape shape,float x,float y){
         float cell=frame.cell;
-        int fresh=0,oldBoard=0;
+        // Only the actual diagnostic-19 red L may overlap two old
+        // board centers, at opposite ends of its vertical stem.
+        final boolean exactFiveCellL=
+            "0,0;0,1;0,2;1,2;2,2;".equals(shape.piece.key);
+        int fresh=0,oldBoard=0,oldMask=0;
         for(int i=0;i<shape.piece.xs.length;i++){
             float cx=x+(shape.piece.xs[i]+.5f)*cell;
             float cy=y+(shape.piece.ys[i]+.5f)*cell;
@@ -673,8 +680,14 @@ public final class DragAlignment {
             if(Math.abs(cx-centerX)>cell*.35f||
                Math.abs(cy-centerY)>cell*.35f)return false;
             oldBoard++;
+            oldMask|=1<<i;
+            if(oldBoard>(exactFiveCellL?2:1))return false;
         }
-        return fresh==shape.piece.xs.length-1&&oldBoard==1;
+        if(fresh==shape.piece.xs.length-1&&oldBoard==1)return true;
+        // Both unchanged centers must independently match saved board bits.
+        // The remaining 3 of 5 cells must be newly painted in held color.
+        return exactFiveCellL&&fresh==3&&oldBoard==2&&
+            oldMask==((1<<0)|(1<<2));
     }
 
     /** A deliberate sub-cell pointer move distinguishes continuous held motion
