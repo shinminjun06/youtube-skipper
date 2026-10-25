@@ -24,6 +24,8 @@ class AutoService : AccessibilityService() {
     companion object { @Volatile var live: AutoService? = null }
     private val main = Handler(Looper.getMainLooper())
     private var floating: LinearLayout? = null
+    private var floatingParams: WindowManager.LayoutParams? = null
+    private var autoDock = false
     private var toggleButton: Button? = null
     private var modeButton: Button? = null
     private var guideView: View? = null
@@ -122,6 +124,11 @@ class AutoService : AccessibilityService() {
         attachDrag(button,true)
         attachDrag(status,false)
         wm.addView(layout,params)
+        floatingParams=params
+        // Accessibility overlays also appear in MediaProjection screenshots.
+        // The v1.3.3 field failure had 3/4 yellow T cell centers hidden by
+        // our controls at y=69..294. Keep the lift path clear in auto mode.
+        layout.post { dockControls(autoDock) }
         val overlay = object : View(this) {
             private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
             override fun onDraw(canvas: Canvas) {
@@ -187,8 +194,26 @@ class AutoService : AccessibilityService() {
         toggleButton?.text=if (value) "■ 중지" else "▶ 시작"
         modeButton?.isEnabled=!value
     } }
+    /** Automatic play docks controls below the tray, never above the board. */
+    private fun dockControls(automatic: Boolean) {
+        val view=floating ?: return
+        val params=floatingParams ?: return
+        if(!::wm.isInitialized || !view.isAttachedToWindow)return
+        val bounds=wm.maximumWindowMetrics.bounds
+        val margin=(6*resources.displayMetrics.density).toInt()
+        val width=if(view.width>0)view.width else (bounds.width()*.44f).toInt()
+        val height=if(view.height>0)view.height else (bounds.height()*.16f).toInt()
+        params.x=if(automatic) (bounds.width()-width-margin).coerceAtLeast(0)
+            else (bounds.width()*.53f).toInt()
+        params.y=if(automatic) (bounds.height()-height-margin).coerceAtLeast(0) else margin
+        runCatching { wm.updateViewLayout(view,params) }
+        android.util.Log.i("BlockBlastAuto","controls docked "+(if(automatic)"BOTTOM" else "TOP")+
+            " at "+params.x+","+params.y+" bounds="+bounds.width()+"x"+bounds.height())
+    }
     fun setAutomatic(value: Boolean) { main.post {
+        autoDock=value
         modeButton?.text=if (value) "모드: 자동" else "모드: 추천"
+        dockControls(value)
     } }
     fun setStatus(value: String) { main.post { statusText?.text = value } }
 
