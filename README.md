@@ -1,4 +1,4 @@
-# Block Blast Advisor + Auto v1.3.2
+# Block Blast Advisor + Auto v1.3.3
 
 Android 11+ 전용 오프라인 Block Blast Classic 게임판 분석 앱입니다. **추천 모드**와 **자동 플레이 모드**를 같은 앱에서 선택할 수 있습니다.
 
@@ -10,12 +10,21 @@ Android 11+ 전용 오프라인 Block Blast Classic 게임판 분석 앱입니�
 
 ## 사용법
 
-1. [오토플레이 전용 빌드 페이지](https://github.com/shinminjun06/youtube-skipper/actions?query=branch%3Ablockblast-autoplay-build)에서 **Build BlockBlast Advisor + Auto APK**가 초록 체크로 완료된 실행을 열고 **BlockBlastAutoPlay-apk** ZIP을 다운로드합니다. ZIP을 풀고 **BlockBlastAutoPlay-v1.3.2.apk**를 설치하세요. 구버전과 혼동하지 마세요.
+1. [오토플레이 전용 빌드 페이지](https://github.com/shinminjun06/youtube-skipper/actions?query=branch%3Ablockblast-autoplay-build)에서 **Build BlockBlast Advisor + Auto APK**가 초록 체크로 완료된 실행을 열고 **BlockBlastAutoPlay-apk** ZIP을 다운로드합니다. ZIP을 풀고 **BlockBlastAutoPlay-v1.3.3.apk**를 설치하세요. 구버전과 혼동하지 마세요.
 2. 홈 화면에서 **Block Blast AutoPlay** 아이콘을 실행해 **v1.3.2**이라고 표시되는지 확인합니다. 기존 **Block Blast Advisor**(v1.2)는 다른 앱으로 남아 있습니다. 기존 Advisor의 접근성 서비스를 끄고 **Block Blast AutoPlay** 접근성을 연결한 다음 **전체 화면 공유 시작**을 승인합니다.
 3. 앱 첫 화면에서 **자동 플레이 모드 선택**을 누른 뒤 Block Blast Classic의 세로 화면을 엽니다. 상단 이동 가능한 플로팅 창에서도 **모드: 추천** 또는 **모드: 자동**을 전환할 수 있습니다.
 4. **▶ 시작**을 누릅니다. 추천에서는 초록색 칸을 보고 수동으로 놓습니다. 자동에서는 앱이 표시된 블록을 먼저 잡고, 위치를 확인한 다음 놓습니다.
 5. **■ 중지**로 언제든 자동 제스처를 중단할 수 있습니다. 모드 전환도 조작 중에는 잠깁니다.
 6. 추적 실패 시 앱의 **위치 측정 실패 진단 파일 저장**을 이용해 원인 분석용 ZIP을 저장할 수 있습니다.
+
+## v1.3.3 자동 플레이 정렬 보정
+
+- 사용자가 보내준 v1.3.2 진단 ZIP은 `CORRECTION_LIMIT / ALIGN`으로, 주황색이나 파란색 블록이 아닌 **보라색 2×2 블록**을 **5번 보정하고도** 끝내 놓지 못한 상황입니다.
+- 실패 스크린샷에는 조각이 목표 5열·2행의 네 칸을 이미 덮고 있었습니다. **올려준 실제 영상 프레임을 오프라인 색상 비교한 결과 목표 내부 16/16 지점이 실제 보라색 조각 색상과 일치**했지만, 그림의 윗변은 게임이 목표보다 약 18픽셀 위에 그렸습니다.
+- `DragAlignment.targetCellPreview`는 **배치 가능성 + 4개 조각 칸 내부의 16개 색상/변화 검사**를 결합합니다. 블록 그림이 목표에서 최대 0.32칸 벗어나도 **목표 인근 추적이 유일하고 180ms 이상 안정적**이며 네 칸 모두 올바른 색상으로 덮인 경우에만 놓습니다.
+- 다른 칸에 있거나 0.55칸 이상 벗어난 조각, 다른 색상이나 정지된 그림은 조작을 승인하지 않습니다. 놓은 뒤에는 여전히 실제 게임판/손패를 검증하고 틀리면 자동 플레이를 중단합니다.
+- 실패 진단 ZIP에 마지막 추적 좌표와 목표 칸 미리보기 인식 여부를 기록해 다음 장애 진단이 더 명확해졌습니다.
+- 업로드한 개인정보 포함 가능성이 있는 실제 스크린샷 파일은 GitHub에 공개하지 않고, 합성 화면으로 회귀 테스트를 작성했습니다.
 
 ## v1.3.2 정렬 실패 수정
 
