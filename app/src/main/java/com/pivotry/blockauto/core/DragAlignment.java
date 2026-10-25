@@ -129,6 +129,51 @@ public final class DragAlignment {
         if(secondError-bestError < frame.cell*frame.cell*.025f)return null;
         return selected;
     }
+    /**
+     * Recovery ONLY after a failed normal probe followed by a reverse probe.
+     *
+     * Some vendor/game render pipelines deliver the visible sprite a full
+     * gesture late. In the v1.3.6 diagnostic the visible red L-piece moved
+     * x=262 -> 340 (+78 px) while the most RECENT pointer command was -52 px.
+     * The normal directed matcher correctly rejects this as contradictory.
+     *
+     * Do not equate a contradictory displacement with a successful directed
+     * probe. Instead prove uniquely that the SAME complete lifted shape was
+     * newly painted in BOTH frames and changed its position appreciably.
+     * The controller must still align it to a legal destination and validate
+     * the final board before releasing, never release from this recovery.
+     */
+    public static Origin locatePickedAfterRetry(Game.Image im,Game.Image before,
+            Game.Image previous,Game.Frame frame,Game.Shape shape,
+            float fingerX,float fingerY,float retryDX,float retryDY) {
+        if(im==null||previous==null||before==null||frame==null||shape==null ||
+           im.width!=previous.width||im.height!=previous.height ||
+           im.width!=before.width||im.height!=before.height ||
+           frame.cell<=0)return null;
+        float cell=frame.cell;
+        float command=(float)Math.hypot(retryDX,retryDY);
+        if(command<cell*.30f || command>cell*1.5f)return null;
+        List<Origin> now=stagedCandidates(im,before,frame,shape,fingerX,fingerY);
+        List<Origin> old=stagedCandidates(previous,before,frame,shape,
+                fingerX-retryDX,fingerY-retryDY);
+        // Multiple newly painted copies are ambiguous (dragging previews,
+        // same-colored nearby pieces); conservatively stop instead.
+        if(now.size()!=1 || old.size()!=1)return null;
+        Origin n=now.get(0),o=old.get(0);
+        if(n.confidence<.88f||o.confidence<.88f)return null;
+        float mx=n.x-o.x,my=n.y-o.y;
+        float moved=(float)Math.hypot(mx,my);
+        if(moved<cell*.35f || moved>cell*2.25f)return null;
+        // Visual movement must be along the probe's AXIS, although rendered
+        // direction may lag one submitted gesture behind.
+        if(Math.abs(retryDX)>=Math.abs(retryDY)) {
+            if(Math.abs(mx)<cell*.33f || Math.abs(my)>cell*.32f)return null;
+        } else {
+            if(Math.abs(my)<cell*.33f || Math.abs(mx)>cell*.32f)return null;
+        }
+        return n;
+    }
+
     private static List<Origin> stagedCandidates(Game.Image im,Game.Image before,Game.Frame frame,Game.Shape shape,float fingerX,float fingerY) {
         // Normally the sprite is above/left of the held finger. Some Android
         // Classic drag skins also render it 1.2-2.2 board cells to the RIGHT
