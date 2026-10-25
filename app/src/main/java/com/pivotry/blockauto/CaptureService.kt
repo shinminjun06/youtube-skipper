@@ -398,12 +398,23 @@ class CaptureService : Service() {
             halt("목표 위치 오류 · 드래그 취소")
             return
         }
-        // Never release based only on the more lenient occlusion-tolerant
-        // recovery match. The usual high-confidence target-area match MUST
-        // succeed before sending ACTION_UP.
-        if (phase == Phase.ALIGN && targetMatch!=null &&
-            abs(dx)<frame.cell*.13 && abs(dy)<frame.cell*.13) {
-            status("정렬 확인 · 블록 놓기")
+        // Grid-snapped previews may render the sprite origin ~0.2 cell
+        // away from the legal target no matter how we move the pointer.
+        // Only release once 1) the strict local visual tracker succeeds,
+        // 2) its origin lies within the same target-cell basin,
+        // 3) ALL 2x2 (or other shape) requested cell interiors are newly
+        // occupied by the correct held material, and 4) that visual state
+        // has remained stable across observations (checked above).
+        // Recovery-only tracking is NEVER sufficient for a release.
+        val targetColumn=kotlin.math.round((targetX-frame.left)/frame.cell).toInt()
+        val targetRow=kotlin.math.round((targetY-frame.top)/frame.cell).toInt()
+        val targetCellsMatch=phase==Phase.ALIGN && targetMatch!=null &&
+            DragAlignment.targetCellPreview(image,beforeImage!!,frame,shape,targetColumn,targetRow)
+        val snappedToTarget=targetCellsMatch && abs(dx)<frame.cell*.32f &&
+            abs(dy)<frame.cell*.32f
+        if (phase == Phase.ALIGN && snappedToTarget) {
+            status("목표 칸 미리보기 확인 · 블록 놓기")
+            android.util.Log.i("BlockBlastAuto","ALIGN target cells confirmed, render offset="+dx+","+dy)
             gesture(epoch,Phase.VERIFY) { service,done -> service.moveHeld(fingerX*scaleX(frame),fingerY*scaleY(frame),false,150,done) }
         } else {
             // Allow a few bounded recovery moves for screen snap offsets.
