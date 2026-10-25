@@ -652,7 +652,47 @@ public final class CoreChecks {
             "expanded window must not mistake an unchanged board for a picked piece");
     }
 
-    public static void main(String[] args) throws Exception {        rightOfFingerPickupRegression();
+    /**
+     * Uploaded v1.3.5 diagnostics: the picked blue 1x5 sprite moves
+     * from x~513 to x~435 after a -52px probe (actual ~-78px).
+     * The lower two blue cell centers are hidden by the fixed bottom HUD
+     * x=419..709,y=1326..1548 in BOTH held screenshots.
+     *
+     * Never relax the all-centers visual proof to accept a partly hidden
+     * five-cell sprite. Instead the Android controller must hide the HUD
+     * before initiating automatic input (verified by androidTest + CI).
+     */
+    static void verticalFiveBottomOverlayRegression() {
+        int width=720,height=1560;float cell=80.125f;
+        int[] pixels=new int[width*height];
+        java.util.Arrays.fill(pixels,0xff243353);
+        Game.Image baseline=new Game.Image(width,height,pixels);
+        Game.Frame frame=new Game.Frame(0L,java.util.Collections.emptyList(),
+            40f,364f,cell,width,height,1f);
+        Game.Piece five=new Game.Piece(0,0,0,1,0,2,0,3,0,4);
+        Game.Shape held=new Game.Shape(0,five,147,1192.5f,0xff3a5dde);
+        Game.Image right=lifted(baseline,frame,held,513,1074);
+        Game.Image left=lifted(baseline,frame,held,435,1074);
+        DragAlignment.Origin tracked=DragAlignment.locateMoving(
+            left,baseline,right,frame,held,364,1365,-52,0);
+        check(tracked!=null && Math.abs(tracked.x-435)<cell*.15f,
+            "an unoccluded 5-cell blue held block is trackable after grid-snapped motion");
+        int[] rightPixels=right.pixels.clone(),leftPixels=left.pixels.clone();
+        for(int y=1326;y<1548;y++)for(int x=419;x<709;x++) {
+            rightPixels[y*width+x]=0xff2b3344;
+            leftPixels[y*width+x]=0xff2b3344;
+        }
+        Game.Image rightBlocked=new Game.Image(width,height,rightPixels);
+        Game.Image leftBlocked=new Game.Image(width,height,leftPixels);
+        check(DragAlignment.locateMoving(leftBlocked,baseline,rightBlocked,
+            frame,held,364,1365,-52,0)==null,
+            "a bottom overlay hiding two occupied centers must not be accepted as a valid held shape");
+        check(DragAlignment.locateMoving(left,baseline,left,frame,held,364,1365,-52,0)==null,
+            "removing HUD cannot turn a stationary five-cell shape into real movement");
+    }
+
+    public static void main(String[] args) throws Exception {        verticalFiveBottomOverlayRegression();
+        rightOfFingerPickupRegression();
         statusOverlayOcclusionRegression();
         boundedDraggedPointerRegression();
 
