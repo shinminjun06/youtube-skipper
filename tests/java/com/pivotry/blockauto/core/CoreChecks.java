@@ -1688,6 +1688,64 @@ public final class CoreChecks {
             "diag19 incomplete right tail is unsafe");
     }
 
+    /** Diagnostic 20: three of four yellow sprite cells sit directly on
+     * old yellow board tiles; center RGB drift is only 4 levels. */
+    static void diagnostic20TemporalOcclusionRegression() {
+        int w=720,h=1560,bg=0xff212852;
+        float left=41f,top=368f,cell=79.875f;
+        int oldYellow=0xffe6b23a,heldYellow=0xffe6ae3a,selected=0xffefbe3a;
+        Game.Piece piece=new Game.Piece(1,0,0,1,1,1,0,2);
+        Game.Shape shape=new Game.Shape(0,piece,131.5f,1191.5f,selected);
+        long board=1L<<(4*8+7) | 1L<<(5*8+6) |
+                   1L<<(5*8+7) | 1L<<(6*8+6);
+        Game.Frame frame=new Game.Frame(board,java.util.Arrays.asList(shape),
+            left,top,cell,w,h,1f);
+        int[] raw=new int[w*h];java.util.Arrays.fill(raw,bg);
+        for(int[] xy:new int[][]{{7,4},{6,5},{7,5}})
+            paintCell(raw,w,h,left,top,cell,xy[0],xy[1],oldYellow);
+        paintCell(raw,w,h,left,top,cell,6,6,0xffef7929);
+        Game.Image before=new Game.Image(w,h,raw);
+        int[] latest=raw.clone();
+        for(int i=0;i<piece.xs.length;i++)
+            paintCell(latest,w,h,left,top,cell,
+                6+piece.xs[i],4+piece.ys[i],heldYellow);
+        Game.Image held=new Game.Image(w,h,latest);
+        float fx=427.2708f,fy=1046.9375f;
+        check(DragAlignment.locate(held,before,frame,shape,fx,fy)==null,
+            "diag20 normal strict tracking rejects sprite over three old cells");
+        DragAlignment.Origin found=DragAlignment.locateTemporalBoardOverlap(
+            held,before,frame,shape,fx,fy);
+        check(found!=null &&
+            Math.abs(found.x-(left+6*cell))<=cell*.25f &&
+            Math.abs(found.y-(top+4*cell))<=cell*.25f,
+            "diag20 temporal tracker recovers four-cell yellow sprite");
+        check(DragAlignment.locateTemporalBoardOverlap(before,before,frame,
+            shape,fx,fy)==null,
+            "diag20 unchanged board never masquerades as moving sprite");
+        Game.Frame noBoard=new Game.Frame(1L<<(6*8+6),
+            frame.shapes,left,top,cell,w,h,1);
+        check(DragAlignment.locateTemporalBoardOverlap(held,before,
+            noBoard,shape,fx,fy)==null,
+            "diag20 stale-colored centers need independent saved occupancy");
+        int[] staticGold=raw.clone();
+        paintCell(staticGold,w,h,left,top,cell,6,6,heldYellow);
+        check(DragAlignment.locateTemporalBoardOverlap(
+            new Game.Image(w,h,staticGold),before,frame,shape,fx,fy)==null,
+            "diag20 one new tile plus unchanged neighbors is not held motion");
+        int[] broken=latest.clone();
+        paintCell(broken,w,h,left,top,cell,6,6,bg);
+        check(DragAlignment.locateTemporalBoardOverlap(
+            new Game.Image(w,h,broken),before,frame,shape,fx,fy)==null,
+            "diag20 all piece cells must visibly exist");
+        float[] nudge=RecoveryNudge.plan(frame,fx,fy,0);
+        check(nudge!=null&&nudge[1]<0&&nudge[0]==0,
+            "diag20 occlusion fallback moves vertically while still holding");
+        check(RecoveryNudge.plan(frame,fx,fy,2)==null,
+            "no unbounded blind gestures permitted");
+        check(RecoveryNudge.plan(frame,Float.NaN,fy,0)==null,
+            "invalid pointer cannot trigger a blind stroke");
+    }
+
     /** Diagnostic 18: no grid-preview coordinate can poison direct calibration. */
     static void diagnostic18ProxyCalibrationRegression() {
         check(DragCalibration.mayRecordVerifiedTargetSample(true,false),
@@ -1786,6 +1844,7 @@ public final class CoreChecks {
     }
 
     public static void main(String[] args) throws Exception {
+        diagnostic20TemporalOcclusionRegression();
         diagnostic19RedLTwoOldBoardRegression();
         diagnostic18ProxyCalibrationRegression();
         diagnostic18BlueDiagonalLineClearRegression();
