@@ -1648,7 +1648,78 @@ public final class CoreChecks {
         check(pace.tier()==AdaptivePace.Tier.BASE,"new session cannot inherit old fast mode");
     }
 
+    /** Diagnostic 18: clear-row BLUE glow hides a two-cell diagonal. */
+    static void diagnostic18BlueDiagonalLineClearRegression() {
+        final int width=720,height=1560,blue=0xff4265de;
+        final float left=41f,top=368f,cell=80f;
+        final int col=2,row=2;
+        final float tx=left+col*cell,ty=top+row*cell;
+        final Game.Piece piece=new Game.Piece(1,0,0,1);
+        final Game.Shape shape=new Game.Shape(0,piece,167.5f,1174f,blue);
+        long board=0;
+        for(int x=0;x<8;x++)if(x!=3)board|=1L<<(row*8+x);
+        for(int x=2;x<8;x++)board|=1L<<(7*8+x);
+        final Game.Frame frame=new Game.Frame(board,java.util.Arrays.asList(shape),
+            left,top,cell,width,height,1);
+        int[] original=new int[width*height];
+        java.util.Arrays.fill(original,0xff212852);
+        for(int x=0;x<8;x++)if(x!=3)
+            paintDiagnostic18Tile(original,width,left,top,cell,x,row,
+                x%3==0?0xffe5b531:(x%3==1?0xffc53939:0xffec781f));
+        for(int x=2;x<8;x++)
+            paintDiagnostic18Tile(original,width,left,top,cell,x,7,0xffdb6b30);
+        Game.Image before=new Game.Image(width,height,original);
+        int[] active=original.clone();
+        for(int x=0;x<8;x++)
+            paintDiagnostic18Tile(active,width,left,top,cell,x,row,blue);
+        paintDiagnostic18Tile(active,width,left,top,cell,col,row+1,blue);
+        Game.Image held=new Game.Image(width,height,active);
+        check(Rules.place(board,piece,col,row)!=null&&
+              Rules.place(board,piece,col,row).lines==1,
+              "diag18 requires legal exactly-one-row-clear input");
+        check(DragAlignment.targetCellPreview(held,before,frame,shape,col,row),
+              "diag18 two isolated target squares are newly blue");
+        DragAlignment.Origin found=DragAlignment.locateDiagonalLineClearPreview(
+            held,before,frame,shape,tx,ty,254f,904f);
+        check(found!=null && Math.abs(found.x-tx)<1f &&
+              Math.abs(found.y-ty)<1f,
+              "diag18 strict isolated diagonal+full-row glow is a release-only proxy");
+        int[] noTail=active.clone();
+        paintDiagnostic18Tile(noTail,width,left,top,cell,col,row+1,0xff212852);
+        check(DragAlignment.locateDiagonalLineClearPreview(
+            new Game.Image(width,height,noTail),before,frame,shape,
+            tx,ty,254f,904f)==null,
+            "diag18 must reject a global blue row without isolated diagonal tail");
+        int[] extraTail=active.clone();
+        paintDiagnostic18Tile(extraTail,width,left,top,cell,col+1,row+1,blue);
+        check(DragAlignment.locateDiagonalLineClearPreview(
+            new Game.Image(width,height,extraTail),before,frame,shape,
+            tx,ty,254f,904f)==null,
+            "diag18 must reject extra independent blue cells beside diagonal");
+        int[] noGlow=active.clone();
+        paintDiagnostic18Tile(noGlow,width,left,top,cell,0,row,0xffe5b531);
+        check(DragAlignment.locateDiagonalLineClearPreview(
+            new Game.Image(width,height,noGlow),before,frame,shape,
+            tx,ty,254f,904f)==null,
+            "diag18 must reject new target tiles without full-row clear animation");
+        check(DragAlignment.locateDiagonalLineClearPreview(
+            held,before,frame,shape,tx,ty,650f,1250f)==null,
+            "diag18 unrelated finger positions cannot authorize release");
+        Game.Shape wrong=new Game.Shape(0,new Game.Piece(0,0,1,1),167f,1174f,blue);
+        check(DragAlignment.locateDiagonalLineClearPreview(
+            held,before,frame,wrong,tx,ty,254f,904f)==null,
+            "diag18 only exact reverse diagonal gets line-glow proxy");
+    }
+    static void paintDiagnostic18Tile(int[] pixels,int width,
+            float left,float top,float cell,int col,int row,int color) {
+        int x0=Math.round(left+col*cell+3),x1=Math.round(left+(col+1)*cell-3);
+        int y0=Math.round(top+row*cell+3),y1=Math.round(top+(row+1)*cell-3);
+        for(int y=y0;y<y1;y++)for(int x=x0;x<x1;x++)
+            pixels[y*width+x]=color;
+    }
+
     public static void main(String[] args) throws Exception {
+        diagnostic18BlueDiagonalLineClearRegression();
         predictiveHeldRoiRegression();
         diagnostic17PurpleShiftedBoardOverlap();
         diagnostic16OrangeDarkBevelRegression();
