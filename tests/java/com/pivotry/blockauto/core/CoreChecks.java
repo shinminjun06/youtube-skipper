@@ -784,7 +784,7 @@ public final class CoreChecks {
             "different shape dimensions normalize around sprite midpoint");
         check(model.predict(0,box,cell,360,1320,720,1560)==null,
             "offscreen learned finger position must fall back to staged drag");
-        check(model.predict(0,box,cell,360,525,1440,3120)==null,
+        check(model.predict(0,box,cell*2,360,525,1440,3120)==null,
             "cell geometry changes must invalidate stale calibration");
         check(!model.recordVerified(new DragCalibration.Observation(
             0,2,2,cell,Float.NaN,800,350,500)),
