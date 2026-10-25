@@ -692,52 +692,65 @@ public final class CoreChecks {
     }
 
     /**
-     * User v1.3.6 metadata: red L 4-cell, board at (40,364) size 80.125,
-     * last reverse-probe -52px at finger (364,1285), yet frozen screenshots
-     * show the SAME 4-cell lifted shape moving x=262 -> x=340 (+78px).
-     * This can occur if the visual frame displays a preceding gesture late.
+     * User v1.3.6 metadata: picked red L, 720x1560, finger (364,1285),
+     * last probe commanded -52px. The chronological screenshot order is
+     * before.png -> probe.png -> held.png (not filename order).
+     * The red L actually moved LEFT x=340 -> x=262 (-78px).
      *
-     * Never teach the normal move checker to accept opposite direction.
-     * The retry-only recovery proves distinct whole-shape positions, and
-     * final release still requires exact target cells and board verification.
+     * It overlaps the original small red tray piece at x~361..395,
+     * y~1139..1244, so two occupied cell CENTER samples have barely
+     * changed against before.png. All-center novelty rejects that otherwise
+     * valid movement. Permit overlap ONLY on a directed reverse retry.
      */
-    static void delayedRetryVisualMotionRegression() {
+    static void thumbnailOverlapPickedMotionRegression() {
         int width=720,height=1560;
         float cell=80.125f;
-        int[] pixels=new int[width*height];
-        java.util.Arrays.fill(pixels,0xff385594);
-        Game.Image before=new Game.Image(width,height,pixels);
+        int[] pix=new int[width*height];
+        java.util.Arrays.fill(pix,0xff385594);
+        // Original small thumbnail: top two red squares, 2 red squares
+        // directly below its right column, exactly as in user's before.png.
+        for(int index=0;index<4;index++) {
+            int x=index==0?325:361;
+            int y=index<2?1139:index==2?1175:1211;
+            for(int yy=y;yy<y+34;yy++)for(int xx=x;xx<x+34;xx++)
+                pix[yy*width+xx]=0xffc53131;
+        }
+        Game.Image before=new Game.Image(width,height,pix);
         Game.Frame frame=new Game.Frame(0x8080808080007f3fL,
             java.util.Collections.emptyList(),40,364,cell,width,height,1);
         Game.Piece redL=new Game.Piece(0,0,1,0,1,1,1,2);
         Game.Shape held=new Game.Shape(1,redL,377.5f,1192.5f,0xffc53131);
-        Game.Image first=lifted(before,frame,held,262,1034);
-        Game.Image last=lifted(before,frame,held,340,1034);
-        // Opposite direction must remain rejected by the STRICT normal test.
-        check(DragAlignment.locateMoving(last,before,first,frame,held,
+        Game.Image previous=lifted(before,frame,held,340,1034);
+        Game.Image latest=lifted(before,frame,held,262,1034);
+        // Previous sprite is fully novel; current sprite overlaps 2 small
+        // thumbnail centers, despite all four large cells being red.
+        check(DragAlignment.locateMoving(latest,before,previous,frame,held,
             364.00626f,1285.4375f,-52.08125f,0)==null,
-            "normal directed pickup matcher rejects opposite-direction sprite");
+            "strict checker correctly rejects two original red tray centers");
         DragAlignment.Origin recovered=DragAlignment.locatePickedAfterRetry(
-            last,before,first,frame,held,364.00626f,1285.4375f,-52.08125f,0);
-        check(recovered!=null&&Math.abs(recovered.x-340)<cell*.16f &&
+            latest,before,previous,frame,held,364.00626f,1285.4375f,-52.08125f,0);
+        check(recovered!=null&&Math.abs(recovered.x-262)<cell*.16f &&
             Math.abs(recovered.y-1034)<cell*.16f,
-            "single reverse retry can reacquire uniquely moving complete red L");
-        check(DragAlignment.locatePickedAfterRetry(last,before,last,frame,
+            "retry recovers left-moving L despite overlap with tray thumbnail");
+        check(DragAlignment.locatePickedAfterRetry(previous,before,latest,frame,
             held,364.00626f,1285.4375f,-52.08125f,0)==null,
-            "stalled static red preview cannot be mistaken for a held motion");
-        check(DragAlignment.locatePickedAfterRetry(before,before,first,frame,
+            "retry must still reject motion opposite the commanded direction");
+        check(DragAlignment.locatePickedAfterRetry(latest,before,latest,frame,
             held,364.00626f,1285.4375f,-52.08125f,0)==null,
-            "vanished red sprite cannot authorize further movement");
-        check(DragAlignment.locatePickedAfterRetry(last,before,first,frame,
+            "unchanged piece cannot masquerade as probe motion");
+        check(DragAlignment.locatePickedAfterRetry(before,before,previous,frame,
+            held,364.00626f,1285.4375f,-52.08125f,0)==null,
+            "vanishing held piece cannot be accepted");
+        check(DragAlignment.locatePickedAfterRetry(latest,before,previous,frame,
             held,364.00626f,1285.4375f,0f,0f)==null,
-            "recovery requires a meaningful deliberate reverse probe");
-        Game.Image other=lifted(last,frame,held,510,1034);
-        check(DragAlignment.locatePickedAfterRetry(other,before,first,frame,
+            "zero commanded probe cannot authorize recovery");
+        Game.Image dup=lifted(latest,frame,held,490,1034);
+        check(DragAlignment.locatePickedAfterRetry(dup,before,previous,frame,
             held,364.00626f,1285.4375f,-52.08125f,0)==null,
-            "multiple similar freshly painted red pieces are ambiguous and unsafe");
+            "extra same-shape red sprite must cause rejection");
     }
 
-    public static void main(String[] args) throws Exception {        delayedRetryVisualMotionRegression();
+    public static void main(String[] args) throws Exception {        thumbnailOverlapPickedMotionRegression();
         verticalFiveBottomOverlayRegression();
         rightOfFingerPickupRegression();
         statusOverlayOcclusionRegression();
