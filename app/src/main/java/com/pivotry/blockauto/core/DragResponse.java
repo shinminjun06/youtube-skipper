@@ -13,10 +13,13 @@ package com.pivotry.blockauto.core;
  * only. They never grant permission to release a piece. Always reobserve.
  */
 public final class DragResponse {
-    private float gainX=1f,gainY=1f;
+    // A cautious pre-probe estimate based on repeated 1.4-1.5x movement in
+    // uploaded Android diagnostics; never treated as verified calibration.
+    private static final float SAFE_PRIOR=1.45f;
+    private float gainX=SAFE_PRIOR,gainY=SAFE_PRIOR;
     private boolean measured;
     private boolean yMeasured;
-    public void reset(){gainX=1f;gainY=1f;measured=false;yMeasured=false;}
+    public void reset(){gainX=SAFE_PRIOR;gainY=SAFE_PRIOR;measured=false;yMeasured=false;}
     public float gainX(){return gainX;}
     public float gainY(){return gainY;}
     public boolean measured(){return measured;}
@@ -31,23 +34,30 @@ public final class DragResponse {
            !finite(cell)||cell<=10f)return false;
         float dx=Math.abs(commandX),dy=Math.abs(commandY);
         if(Math.max(dx,dy)<cell*.25f)return false;
-        final boolean horizontal=dx>=dy;
-        float command=horizontal?commandX:commandY;
-        float actual=horizontal?actualX:actualY;
-        if(command*actual<=0f)return false;
-        // The game is sometimes grid-quantized. Reject very small or
-        // implausibly large movement; do not chase spurious image candidates.
-        float estimate=actual/command;
-        if(estimate<.68f || estimate>2.30f)return false;
-        float cross=horizontal?Math.abs(actualY):Math.abs(actualX);
-        if(cross>cell*.38f)return false;
-        if(horizontal) {
-            gainX=measured?(.65f*gainX+.35f*estimate):estimate;
-            if(!yMeasured)gainY=gainX;
-        } else {
-            gainY=yMeasured?(.65f*gainY+.35f*estimate):estimate;
-            yMeasured=true;
-            if(!measured)gainX=gainY;
+        // Each moved axis is learned independently. A diagonal movement
+        // is valid evidence for both axes; an orthogonal jump when that
+        // orthogonal axis was NOT commanded is contradictory and rejected.
+        boolean usableX=dx>=cell*.25f,usableY=dy>=cell*.25f;
+        if(!usableX && Math.abs(actualX)>cell*.38f)return false;
+        if(!usableY && Math.abs(actualY)>cell*.38f)return false;
+        float measuredX=0f,measuredY=0f;
+        if(usableX) {
+            if(commandX*actualX<=0f)return false;
+            measuredX=actualX/commandX;
+            if(measuredX<.68f||measuredX>2.30f)return false;
+        }
+        if(usableY) {
+            if(commandY*actualY<=0f)return false;
+            measuredY=actualY/commandY;
+            if(measuredY<.68f||measuredY>2.30f)return false;
+        }
+        if(!usableX && !usableY)return false;
+        if(usableX)gainX=measured?(.65f*gainX+.35f*measuredX):measuredX;
+        if(usableY)gainY=yMeasured?(.65f*gainY+.35f*measuredY):measuredY;
+        if(usableY)yMeasured=true;
+        if(!measured){
+            if(!usableX)gainX=gainY;
+            if(!usableY)gainY=gainX;
         }
         measured=true;
         return true;
@@ -72,6 +82,8 @@ public final class DragResponse {
         // Prevent any command likely to hide a cell beyond either screen edge.
         float right=width-pieceWidth*cell-pad;
         float bottom=height-pieceHeight*cell-pad;
+        if(originX<pad || originX>right || originY<pad || originY>bottom)
+            throw new IllegalArgumentException("Already clipped sprite cannot be steered blindly");
         sx=limit(sx,(pad-originX)/gainX,(right-originX)/gainX);
         sy=limit(sy,(pad-originY)/gainY,(bottom-originY)/gainY);
         return new float[]{sx,sy};
