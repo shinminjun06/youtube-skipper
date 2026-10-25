@@ -248,7 +248,13 @@ class AutoService : AccessibilityService() {
         if(autoDock) floating?.post {dockControls(true)}
     } }
 
-    fun beginDrag(sx: Float,sy: Float,tx: Float,ty: Float,expectedApp: String?,done: (Boolean)->Unit,travelDuration: Long=500L) {
+    /** Legacy callback-last API keeps Android instrumentation and callers compatible. */
+    fun beginDrag(sx: Float,sy: Float,tx: Float,ty: Float,expectedApp: String?,done: (Boolean)->Unit) {
+        beginDrag(sx,sy,tx,ty,expectedApp,500L,done)
+    }
+    /** The adaptive controller can choose the travel duration; callback stays last. */
+    fun beginDrag(sx: Float,sy: Float,tx: Float,ty: Float,expectedApp: String?,
+                  travelDuration: Long,done: (Boolean)->Unit) {
         check(Looper.myLooper() == Looper.getMainLooper())
         val actualApp = foregroundPackage()
         lastGestureError = ""
