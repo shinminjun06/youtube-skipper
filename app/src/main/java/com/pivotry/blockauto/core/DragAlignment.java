@@ -157,6 +157,115 @@ public final class DragAlignment {
         return hits/(float)total*.7f+clean/(float)edges*.3f;
     }
 
+
+    /**
+     * v1.4.9 diagnostic (15), blue 3x2 right-foot L: one completed
+     * row glows blue across all eight cells and merges with the lower-right
+     * held block. The three upper square faces are ABOVE the glowing row
+     * and remain independently distinguishable. The lower-right face has
+     * a markedly brighter bevel than its neighboring clearing-row glow.
+     *
+     * Unlike a generic 'all cells blue' test, require:
+     *   (a) exact L orientation and legal one-row completion;
+     *   (b) 4 newly colored inner probes with 2 strict blue faces per cell;
+     *   (c) a separate luminous bevel in ALL THREE upper squares;
+     *   (d) the lower-right bevel brighter than neighboring row glow;
+     *   (e) staged finger in a plausible relative position.
+     * The caller must then require a stable image AND must use independent
+     * board+tray verification after release. Never record motion calibration.
+     */
+    public static Origin locateLineGlowRightL(Game.Image current,Game.Image before,
+            Game.Frame frame,Game.Shape held,
+            float targetX,float targetY,float fingerX,float fingerY) {
+        if(current==null||before==null||frame==null||held==null||
+           current.width!=before.width||current.height!=before.height||
+           !Float.isFinite(targetX)||!Float.isFinite(targetY)||
+           !Float.isFinite(fingerX)||!Float.isFinite(fingerY)||
+           !Float.isFinite(frame.cell)||frame.cell<=10f)return null;
+        Game.Piece piece=held.piece;
+        if(piece.w!=3||piece.h!=2||piece.xs.length!=4)return null;
+        int key=0;
+        for(int i=0;i<4;i++)key|=1<<(piece.ys[i]*3+piece.xs[i]);
+        if(key!=0b100111)return null;
+        float cell=frame.cell;
+        int col=Math.round((targetX-frame.left)/cell);
+        int row=Math.round((targetY-frame.top)/cell);
+        if(col<0||col>5||row<0||row>6||
+           Math.abs(frame.left+col*cell-targetX)>cell*.06f ||
+           Math.abs(frame.top+row*cell-targetY)>cell*.06f)return null;
+        Rules.Placement placed=Rules.place(frame.board,piece,col,row);
+        if(placed==null||placed.lines!=1)return null;
+        // The filled row must be the BOTTOM of this L; this excludes
+        // unrelated single-column clear effects masquerading as a sprite.
+        long bottomMask=255L<<((row+1)*8);
+        long filled=frame.board|piece.mask(col,row);
+        if((filled&bottomMask)!=bottomMask)return null;
+        if(fingerX<targetX+cell*.7f||fingerX>targetX+cell*4.6f||
+           fingerY<targetY+cell*2.2f||fingerY>targetY+cell*5.5f)return null;
+
+        int oldBlue=held.color;
+        // The special specular face (148,182,255) is more cyan than the
+        // miniature tray color (58,93,222). Require BOTH a still-blue,
+        // bright-channel boost AND the two lower strict-colour probes.
+        int upperBevels=0;
+        float bottomBevel=-1f;
+        for(int i=0;i<4;i++){
+            int px=piece.xs[i],py=piece.ys[i],bright=0,material=0,bevels=0;
+            float bx=targetX+px*cell,by=targetY+py*cell;
+            for(float oy:new float[]{.39f,.61f})
+                for(float ox:new float[]{.39f,.61f}){
+                    float sx=bx+ox*cell,sy=by+oy*cell;
+                    int now=current.at(sx,sy),was=before.at(sx,sy);
+                    if(Recognizer.distance(now,was)<=60||
+                       !blueSpecularMaterial(now,oldBlue))return null;
+                    material++;
+                    if(same(now,oldBlue))bright++;
+                    if(oy<.5f && brightBlueBevel(now,oldBlue)) {
+                        bevels++;
+                        if(py==1)bottomBevel=Math.max(bottomBevel,Recognizer.light(now));
+                    }
+                }
+            if(material!=4||bright<2||bevels<1)return null;
+            if(py==0)upperBevels++;
+        }
+        if(upperBevels!=3 || bottomBevel<0)return null;
+        // Compare against a BLUE glow in the same completed row but OUTSIDE
+        // the held shape: a single uniform neon row is NOT a held fourth tile.
+        float neighborBright=-1f;
+        for(int x=0;x<8;x++) {
+            if(x==col+2)continue;
+            float sx=frame.left+(x+.39f)*cell;
+            float sy=frame.top+(row+1+.39f)*cell;
+            int c=current.at(sx,sy),old=before.at(sx,sy);
+            if(blueSpecularMaterial(c,oldBlue)&&Recognizer.distance(c,old)>60){
+                float light=Recognizer.light(c);
+                if(neighborBright<0||light>neighborBright)neighborBright=light;
+            }
+        }
+        if(neighborBright<0||bottomBevel<neighborBright+22f)return null;
+        return new Origin(targetX,targetY,.92f);
+    }
+
+    /** Bright blue bevels drift toward pale cyan; the lower half of each
+     * square must STILL match the selected tray's strict original blue. */
+    private static boolean blueSpecularMaterial(int c,int target) {
+        if(same(c,target))return true;
+        if(!Recognizer.isTile(c))return false;
+        return Recognizer.b(target)>Recognizer.r(target)+75 &&
+               Recognizer.b(target)>Recognizer.g(target)+55 &&
+               Recognizer.b(c)>Recognizer.g(c)+20 &&
+               Recognizer.g(c)>Recognizer.r(c)+14 &&
+               Recognizer.b(c)>=Recognizer.b(target)*.92f &&
+               Recognizer.r(c)>=Recognizer.r(target) &&
+               Recognizer.g(c)>=Recognizer.g(target);
+    }
+    private static boolean brightBlueBevel(int c,int target) {
+        return blueSpecularMaterial(c,target)&&
+            Recognizer.r(c)>Recognizer.r(target)+50 &&
+            Recognizer.g(c)>Recognizer.g(target)+50 &&
+            Recognizer.b(c)>=Recognizer.b(target);
+    }
+
     /**
      * Diagnostic (14): on a three-line combo the snapped held L is visually
      * distinct from the full-row/column clear GLOW, but normal sprite search

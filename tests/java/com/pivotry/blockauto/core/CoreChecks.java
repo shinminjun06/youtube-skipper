@@ -1071,6 +1071,72 @@ public final class CoreChecks {
      * causing ALIGN/NO_HELD_MATCH. Probe was deliberately horizontal.
      */
 
+
+    static void diagnostic15BlueLineGlowRegression() {
+        int w=720,h=1560,bg=0xff212d52;
+        float cell=79.875f,left=41f,top=368f;
+        long board=0xfcf7000900000001L;
+        Game.Piece blueL=new Game.Piece(0,0,1,0,2,0,2,1);
+        Game.Shape selected=new Game.Shape(1,blueL,358f,1174f,0xff3a5dde);
+        Game.Frame frame=new Game.Frame(board,java.util.Arrays.asList(selected),
+            left,top,cell,w,h,1f);
+        int[] original=new int[w*h];java.util.Arrays.fill(original,bg);
+        for(int r=0;r<8;r++)for(int col=0;col<8;col++)
+            if((board&(1L<<(r*8+col)))!=0)
+                paintCell(original,w,h,left,top,cell,col,r,0xffbd3b34);
+        Game.Image before=new Game.Image(w,h,original);
+        check(Rules.place(board,blueL,1,5).lines==1,
+            "diag15 original board+blue L clears exactly bottom shape row");
+        float tx=left+cell,ty=top+5*cell;
+        int[] glowing=original.clone();
+        for(int col=0;col<8;col++)
+            paintCell(glowing,w,h,left,top,cell,col,6,0xff4265e6);
+        Game.Image glowOnly=new Game.Image(w,h,glowing);
+        check(DragAlignment.locateLineGlowRightL(glowOnly,before,frame,selected,
+            tx,ty,289.107f,1076.834f)==null,
+            "glowing blue LINE ALONE is never a held right L");
+        int[] held=glowing.clone();
+        for(int i=0;i<blueL.xs.length;i++){
+            int col=1+blueL.xs[i],row=5+blueL.ys[i];
+            float cellX=left+col*cell,cellY=top+row*cell;
+            for(int y=(int)cellY;y<cellY+cell;y++)for(int x=(int)cellX;x<cellX+cell;x++){
+                if(x<0||y<0||x>=w||y>=h)continue;
+                // Bright beveled top, deep-blue lower face.
+                int shade=y<cellY+cell*.5f?
+                    ((row==6)?0xffaddbff:0xff94b6ff):0xff4265e6;
+                held[y*w+x]=shade;
+            }
+        }
+        Game.Image current=new Game.Image(w,h,held);
+        check(DragAlignment.locateLineGlowRightL(current,before,frame,selected,
+            tx,ty,289.107f,1076.834f)!=null,
+            "four colored face interiors and lower-right bevel over glowing row");
+        check(DragAlignment.locateLineGlowRightL(current,before,frame,selected,
+            tx,ty,690f,1076.834f)==null,
+            "unrelated finger never authorizes glow preview");
+        check(DragAlignment.locateLineGlowRightL(current,before,frame,selected,
+            tx,ty+cell,289.107f,1076.834f)==null,
+            "wrong target row never authorizes glow preview");
+        int[] uniform=glowing.clone();
+        for(int i=0;i<3;i++)
+            paintCell(uniform,w,h,left,top,cell,1+i,5,0xff4265e6);
+        check(DragAlignment.locateLineGlowRightL(
+            new Game.Image(w,h,uniform),before,frame,selected,
+            tx,ty,289.107f,1076.834f)==null,
+            "uniformly colored glow without true bevel cannot mimic held L");
+        int[] missing=held.clone();
+        paintCell(missing,w,h,left,top,cell,2,5,bg);
+        check(DragAlignment.locateLineGlowRightL(
+            new Game.Image(w,h,missing),before,frame,selected,
+            tx,ty,289.107f,1076.834f)==null,
+            "missing L cell must block release");
+        Game.Frame noClear=new Game.Frame(0L,frame.shapes,
+            left,top,cell,w,h,1f);
+        check(DragAlignment.locateLineGlowRightL(current,before,noClear,selected,
+            tx,ty,289.107f,1076.834f)==null,
+            "legitimate non-combo placement cannot use this one-row recovery");
+    }
+
     static void diagnostic14ComboGlowRegression() {
         int width=720,height=1560,bg=0xff293052;
         float cell=79.625f,left=42f,top=368f;
@@ -1416,6 +1482,7 @@ public final class CoreChecks {
     }
 
     public static void main(String[] args) throws Exception {
+        diagnostic15BlueLineGlowRegression();
         diagnostic14ComboGlowRegression();
         diagnostic13OccupiedGreenBoardRegression();
         diagnostic11StackedPreviewRegression();
