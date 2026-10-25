@@ -918,7 +918,95 @@ public final class CoreChecks {
             "two possible five-cell green sprites are ambiguous");
     }
 
-    public static void main(String[] args) throws Exception {
+    /**
+     * v1.4.1 diagnostics (8) from user:
+     * Selected green 1x5 block, captured 720x1560 / cell 79.875.
+     * Visible at x~322,y~1075 after initial pickup and finally x~667,
+     * y~715: sprite delta +345/-360 on finger delta +229.4/-239.625.
+     * Gain is ~1.50 in BOTH axes. Old 1:1 sprite-error correction pushed
+     * sprite beyond right edge, leaving a clipped last screenshot and
+     * causing ALIGN/NO_HELD_MATCH. Probe was deliberately horizontal.
+     */
+    static void measuredSpriteResponseRegression() {
+        float cell=79.875f;
+        DragResponse response=new DragResponse();
+        check(!response.measured(),"new held stroke starts without measured gain");
+        check(Math.abs(response.gainX()-1.45f)<.001f &&
+              Math.abs(response.gainY()-1.45f)<.001f,
+            "unknown device uses cautious response prior, not aggressive 1:1");
+        check(!response.observe(-52,0,78,0,cell),
+            "opposite-signed visual move cannot poison controller gain");
+        check(!response.measured(),"rejected observation leaves model untrained");
+        int width=720,height=1560;
+        int[] pix=new int[width*height];
+        java.util.Arrays.fill(pix,0xff385594);
+        Game.Image before=new Game.Image(width,height,pix);
+        Game.Frame frame=new Game.Frame(0L,java.util.Collections.emptyList(),
+            41,368,cell,width,height,1);
+        Game.Piece vertical=new Game.Piece(0,0,0,1,0,2,0,3,0,4);
+        Game.Shape shape=new Game.Shape(1,vertical,359.5f,1193f,0xff2ab83e);
+        Game.Image first=lifted(before,frame,shape,322,1075);
+        Game.Image second=lifted(before,frame,shape,405,1075);
+        DragAlignment.Motion evidence=DragAlignment.locateMovingEvidence(
+            second,before,first,frame,shape,415.9125f,1366.4375f,55.9125f,0);
+        check(evidence!=null && Math.abs(evidence.movedX-83)<cell*.15f,
+            "source-aligned probe must return the witnessed whole-sprite displacement");
+        check(response.observe(55.9125f,0,evidence.movedX,evidence.movedY,cell),
+            "uniquely tracked horizontal probe calibrates per-stroke gain");
+        check(response.measured() && response.gainX()>1.3f &&
+            response.gainX()<1.7f &&
+            Math.abs(response.gainY()-response.gainX())<.01f,
+            "visual response gain is about 1.5 and provisionally shared by Y");
+
+        float wantedX=600.125f,wantedY=607.625f;
+        float oldFingerDX=DragCalibration.correction(wantedX-405,cell);
+        check(405+1.5f*oldFingerDX>width-cell,
+            "old controller overshoots the 1x5 sprite beyond right capture edge");
+        float[] safer=response.correction(wantedX-405,wantedY-1075,
+            405,1075,1,5,cell,width,height);
+        check(safer[0]>0 && safer[0]<oldFingerDX,
+            "calibrated x-command is shorter than old 1:1 correction");
+        check(safer[1]<0 && safer[1]>=-3*cell-.01f,
+            "calibrated y-command stays within bounded three-cell travel");
+        float nx=405+1.5f*safer[0],ny=1075+1.5f*safer[1];
+        check(nx+cell<=width && ny>=0 && ny+5*cell<=height,
+            "first observed step leaves ALL five cells inside capture");
+        check(Math.abs(nx-wantedX)<cell*.25f,
+            "first calibrated step almost reaches target x without clipping");
+        float[] secondStep=response.correction(wantedX-nx,wantedY-ny,
+            nx,ny,1,5,cell,width,height);
+        float finalX=nx+1.5f*secondStep[0],
+              finalY=ny+1.5f*secondStep[1];
+        check(Math.abs(finalX-wantedX)<cell*.14f &&
+              Math.abs(finalY-wantedY)<cell*.14f,
+            "two feedback corrections converge within a safe target-cell basin");
+        check(!response.observe(60,0,0,80,cell),
+            "orthogonal sprite jump on a horizontal probe is unsafe");
+        check(!response.observe(60,0,220,0,cell),
+            "implausible 3.7x motion must not overwrite verified scale");
+        check(response.observe(120,-160,180,-240,cell),
+            "real verified diagonal motion updates both X and Y gain");
+        check(Math.abs(response.gainX()-1.5f)<.20f &&
+              Math.abs(response.gainY()-1.5f)<.20f,
+            "diagonal evidence reinforces the measured 1.5x response");
+        float[] boundary=response.correction(250,0,626,700,
+            1,5,cell,width,height);
+        check(626+1.5f*boundary[0]+cell<=width,
+            "sprite width is always guarded against the right capture border");
+        boolean badRejected=false;
+        try{response.correction(300,200,667,715,
+            1,5,cell,width,height);}
+        catch(IllegalArgumentException expected){badRejected=true;}
+        check(badRejected,"already clipped sprite must safely stop instead of blindly moving");
+
+        response.reset();
+        check(!response.measured() &&
+            Math.abs(response.gainX()-1.45f)<.001f,
+            "each newly held block starts a fresh motor response calibration");
+    }
+
+    public static void main(String[] args) throws Exception {        measuredSpriteResponseRegression();
+
         verticalFiveSelectedTrayOverlapRegression();        verifiedDragCalibrationRegression();
         adaptiveServoComparison();
         thumbnailOverlapPickedMotionRegression();
