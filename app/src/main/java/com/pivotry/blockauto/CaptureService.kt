@@ -81,6 +81,8 @@ class CaptureService : Service() {
     private val dragCalibration = DragCalibration()
     /** Per-stroke measured sprite travel / finger travel; NEVER authorizes release. */
     private val dragResponse = DragResponse()
+    /** Start at v1.4.2-safe speed; accelerate only after verified clean moves. */
+    private val pace = AdaptivePace()
     private var lastCorrectionOrigin: DragAlignment.Origin? = null
     private var lastCorrectionStepX=0f
     private var lastCorrectionStepY=0f
@@ -160,6 +162,7 @@ class CaptureService : Service() {
             scoreTracker.reset()
             dragCalibration.reset()
             dragResponse.reset()
+            pace.reset()
             lastCorrectionOrigin=null
             pendingDragSample=null
             directDragUsed=false; directDragCount=0; stagedDragCount=0
@@ -173,6 +176,7 @@ class CaptureService : Service() {
     }
     fun halt(reason: String) {
         running = false; generation.incrementAndGet(); targetApp = null
+        if(::worker.isInitialized) worker.post {pace.uncertainty()}
         // The pending measurement must not survive an interrupted gesture.
         if(::worker.isInitialized) worker.post {pendingDragSample=null}
         main.post { AutoService.live?.abortHold(); AutoService.live?.clearGuide(true); AutoService.live?.setRunning(false) }
@@ -193,14 +197,15 @@ class CaptureService : Service() {
     }
     private fun stable(signature: String,now: Long): Boolean {
         if (signature != stableSignature) { stableSignature = signature; stableAt = now; return false }
-        return now - stableAt >= 200
+        return now - stableAt >= (if(automatic)pace.boardStableMs() else 200)
     }
     private val loop = object : Runnable {
         override fun run() {
             if (destroyed) return
             try { if (running && !inFlight) tick() }
             catch (e: Exception) { halt("분석 중단: " + e.javaClass.simpleName) }
-            if (!destroyed) worker.postDelayed(this,130)
+            if (!destroyed) worker.postDelayed(this,
+                if(automatic)pace.framePollMs().toLong() else 130L)
         }
     }
     private fun tick() {
@@ -257,6 +262,13 @@ class CaptureService : Service() {
         if (phase == Phase.VERIFY) {
             if (stable(frame.signature(),now) && verifier!!.matches(frame)) {
                 verifiedMoves++
+                // Only an actual matching board + consumed tray slot can
+                // advance speed. Android gesture completion alone cannot.
+                pace.verified(corrections,motionGestureCount)
+                android.util.Log.i("BlockBlastAuto",
+                    "pace verified tier="+pace.tier()+" clean="+pace.cleanPlacements()+
+                    " heldStableMs="+pace.heldStableMs()+
+                    " firstTravelMs="+pace.firstTravelMs())
                 pendingDragSample?.let { sample ->
                     if(dragCalibration.recordVerified(sample)) {
                         android.util.Log.i("BlockBlastAuto",
@@ -276,9 +288,11 @@ class CaptureService : Service() {
                     " gestures="+motionGestureCount+" durationMs="+motionDuration+
                     " corrections="+corrections+" averageGestureCount="+avgGestures+
                     " verifiedDirect="+verifiedDirectCount+
-                    " verifiedStaged="+verifiedStagedCount)
-                status("설치 "+verifiedMoves+"수 · 직접 "+verifiedDirectCount+
-                    " / 기본 "+verifiedStagedCount+" · 평균 제스처 "+String.format(java.util.Locale.US,"%.1f",avgGestures))
+                    " verifiedStaged="+verifiedStagedCount+
+                    " pace="+pace.tier())
+                status("설치 "+verifiedMoves+"수 · 속도 "+pace.tier()+
+                    " · 직접 "+verifiedDirectCount+" / 기본 "+verifiedStagedCount+
+                    " · 평균 제스처 "+String.format(java.util.Locale.US,"%.1f",avgGestures))
                 phase = Phase.IDLE; stableSignature = ""; beforeImage = null; probeImage = null; before = null
                 verifier = null; retries = 0; retrySignature = ""; actionFloor = Long.MIN_VALUE
             } else if (now-phaseAt > 3200) {
@@ -362,7 +376,8 @@ class CaptureService : Service() {
                 "calibrated direct stroke slot="+shape.slot+" fingers="+fingerX+","+fingerY)
             gesture(epoch,Phase.ALIGN) { service,done ->
                 service.beginDrag(shape.pickX*scaleX(frame),shape.pickY*scaleY(frame),
-                    fingerX*scaleX(frame),fingerY*scaleY(frame),app,done)
+                    fingerX*scaleX(frame),fingerY*scaleY(frame),app,done,
+                    pace.firstTravelMs().toLong())
             }
         } else {
             stagedDragCount++
@@ -372,7 +387,8 @@ class CaptureService : Service() {
             status("기본 안전 이동 · 블록 " + (shape.slot+1) + "번 · 콤보 " + scoreTracker.combo())
             gesture(epoch,Phase.PICKED) { service,done ->
                 service.beginDrag(shape.pickX*scaleX(frame),shape.pickY*scaleY(frame),
-                    fingerX*scaleX(frame),fingerY*scaleY(frame),app,done)
+                    fingerX*scaleX(frame),fingerY*scaleY(frame),app,done,
+                    pace.firstTravelMs().toLong())
             }
         }
     }
@@ -415,7 +431,8 @@ class CaptureService : Service() {
             if (fingerX+probeDX > frame.width-2) probeDX = -probeDX
             fingerX += probeDX
             status("잡기 확인 · 추가 움직임 측정")
-            gesture(epoch,Phase.PICKED) { service,done -> service.moveHeld(fingerX*scaleX(frame),fingerY*scaleY(frame),true,320,done) }
+            gesture(epoch,Phase.PICKED) { service,done -> service.moveHeld(fingerX*scaleX(frame),fingerY*scaleY(frame),
+                    true,pace.probeMs().toLong(),done) }
             return
         }
         // The target-local search is intentionally strict: only that match
@@ -466,13 +483,15 @@ class CaptureService : Service() {
             // once in the opposite direction without releasing the pointer.
             if (phase == Phase.PICKED && corrections == 0 && now-phaseAt > 900) {
                 corrections = 1
+                pace.uncertainty() // Uncertain initial motion reverts to baseline.
                 probeImage = image
                 probeDX = -frame.cell*.65f
                 probeDY = 0f
                 fingerX += probeDX
                 status("잡기 재측정 · 블록 움직임 재확인")
                 gesture(epoch,Phase.PICKED) { service,done ->
-                    service.moveHeld(fingerX*scaleX(frame),fingerY*scaleY(frame),true,350,done)
+                    service.moveHeld(fingerX*scaleX(frame),fingerY*scaleY(frame),
+                        true,pace.retryMs().toLong(),done)
                 }
                 return
             }
@@ -487,7 +506,7 @@ class CaptureService : Service() {
         if (old == null || abs(old.x-found.x)>frame.cell*.08 || abs(old.y-found.y)>frame.cell*.08) {
             observed = found; observedAt = now; return
         }
-        if (now-observedAt < 180) return
+        if (now-observedAt < pace.heldStableMs()) return
         if(phase==Phase.ALIGN) {
             // At most one gain update per completed correction gesture.
             // A subsequent full-shape observation is independent evidence
@@ -540,7 +559,8 @@ class CaptureService : Service() {
                 fingerX,fingerY,found.x,found.y)
             status("목표 칸 미리보기 확인 · 블록 놓기")
             android.util.Log.i("BlockBlastAuto","ALIGN target cells confirmed, render offset="+dx+","+dy)
-            gesture(epoch,Phase.VERIFY) { service,done -> service.moveHeld(fingerX*scaleX(frame),fingerY*scaleY(frame),false,150,done) }
+            gesture(epoch,Phase.VERIFY) { service,done -> service.moveHeld(fingerX*scaleX(frame),fingerY*scaleY(frame),
+                false,pace.releaseMs().toLong(),done) }
         } else {
             // Damped short correction strokes avoid a large vertical
             // finger jump changing the game's lift offset mid-gesture.
@@ -560,6 +580,7 @@ class CaptureService : Service() {
             // The game may translate an input by 1.5x (real v1.4.1 case).
             // Divide by the measured visual response and prevent the sprite
             // from leaving the image before it can be reobserved.
+            if(corrections>=4) pace.uncertainty()
             val step=try {
                 dragResponse.correction(dx,dy,found.x,found.y,
                     shape.piece.w,shape.piece.h,frame.cell,frame.width,frame.height)
@@ -584,7 +605,10 @@ class CaptureService : Service() {
                 " spriteGain="+dragResponse.gainX()+","+dragResponse.gainY()+
                 " commanded="+stepX+","+stepY+" actualFinger="+fingerX+","+fingerY)
             status("블록 위치 단계 보정 " + corrections)
-            gesture(epoch,Phase.ALIGN) { service,done -> service.moveHeld(fingerX*scaleX(frame),fingerY*scaleY(frame),true,350,done) }
+            gesture(epoch,Phase.ALIGN) { service,done ->
+                service.moveHeld(fingerX*scaleX(frame),fingerY*scaleY(frame),
+                    true,pace.correctionMs().toLong(),done)
+            }
         }
     }
     private fun freezeFailure(image: Game.Image,reason: String) {
@@ -601,6 +625,8 @@ class CaptureService : Service() {
             .put("pickupRetry",phase==Phase.PICKED && corrections==1)
             .put("calibratedDirectStart",directDragUsed)
             .put("visualResponseMeasured",dragResponse.measured())
+            .put("gestureSpeedTier",pace.tier().name)
+            .put("consecutiveCleanPlacements",pace.cleanPlacements())
             .put("fingerToSpriteGainX",dragResponse.gainX())
             .put("fingerToSpriteGainY",dragResponse.gainY())
             .put("verifiedCalibrationSamples",dragCalibration.confirmedSamples())
@@ -661,7 +687,8 @@ class CaptureService : Service() {
                     if (!valid(epoch)) return@post
                     inFlight = false
                     if (!ok) { halt("터치 실패 · " + service.lastGestureError.ifEmpty { "입력 연결을 확인하세요" }); return@post }
-                    phase = next; phaseAt = SystemClock.uptimeMillis(); nextReadAt = phaseAt+160
+                    phase = next; phaseAt = SystemClock.uptimeMillis()
+                    nextReadAt = phaseAt+pace.postGestureReadMs()
                     stableSignature = ""; observed = null
                 }
             }
