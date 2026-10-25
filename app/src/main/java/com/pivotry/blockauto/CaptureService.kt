@@ -376,8 +376,8 @@ class CaptureService : Service() {
                 "calibrated direct stroke slot="+shape.slot+" fingers="+fingerX+","+fingerY)
             gesture(epoch,Phase.ALIGN) { service,done ->
                 service.beginDrag(shape.pickX*scaleX(frame),shape.pickY*scaleY(frame),
-                    fingerX*scaleX(frame),fingerY*scaleY(frame),app,done,
-                    pace.firstTravelMs().toLong())
+                    fingerX*scaleX(frame),fingerY*scaleY(frame),app,
+                    pace.firstTravelMs().toLong(),done)
             }
         } else {
             stagedDragCount++
@@ -387,8 +387,8 @@ class CaptureService : Service() {
             status("기본 안전 이동 · 블록 " + (shape.slot+1) + "번 · 콤보 " + scoreTracker.combo())
             gesture(epoch,Phase.PICKED) { service,done ->
                 service.beginDrag(shape.pickX*scaleX(frame),shape.pickY*scaleY(frame),
-                    fingerX*scaleX(frame),fingerY*scaleY(frame),app,done,
-                    pace.firstTravelMs().toLong())
+                    fingerX*scaleX(frame),fingerY*scaleY(frame),app,
+                    pace.firstTravelMs().toLong(),done)
             }
         }
     }
