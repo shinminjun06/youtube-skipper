@@ -79,6 +79,13 @@ if ! grep -Fq 'val x=if(visible)' app/src/main/java/com/pivotry/blockauto/AutoSe
   exit 1
 fi
 
+# A full intact sprite covering its own selected tray MUST be eligible for
+# a motion-confirmed pickup on the FIRST probe; no extra reverse gesture
+# is allowed merely to bypass source-thumbnail novelty.
+if ! grep -Fq 'val sourceOverlapRecovery=if(phase==Phase.PICKED && directed==null)' app/src/main/java/com/pivotry/blockauto/CaptureService.kt; then
+  echo 'FAIL: early source-thumbnail-aware pickup fallback missing' >&2
+  exit 1
+fi
 # Hybrid drag: only a successfully verified board transition may
 # upgrade the normalized screen/slot model; direct gestures must remain
 # held until the strict final target-preview check authorizes release.
