@@ -392,6 +392,37 @@ public final class CoreChecks {
      * near (523,273), upper ~16.7% of the tile sampling behind our HUD.
      * Use a synthetic frame, never commit the user's private screenshot.
      */
+    /** v1.3.2 user's CORRECTION_LIMIT: legal held 2x2 cells covered exactly
+     * the destination (col 5,row 2), but artwork origin stayed 0.22 cell high
+     * after several correction gestures. Only target-cell evidence can break
+     * that futile correction loop.
+     */
+    static void snappedTargetPreviewRegression() throws Exception {
+        Game.Image empty=load("empty-gold.png");
+        Game.Frame frame=Recognizer.read(empty);
+        check(frame!=null,"real fixture supplies board geometry for snapped preview");
+        int tx=5,ty=2;
+        Game.Piece square=new Game.Piece(0,0,1,0,0,1,1,1);
+        Game.Shape held=new Game.Shape(2,square,551.5f,1174,0xff8451d6);
+        check(Rules.place(frame.board,square,tx,ty)!=null,"target is legal for 2x2 shape");
+        float left=frame.left+tx*frame.cell;
+        float top=frame.top+ty*frame.cell;
+        Game.Image snapped=lifted(empty,frame,held,left+frame.cell*.11f,top-frame.cell*.22f);
+        check(DragAlignment.targetCellPreview(snapped,empty,frame,held,tx,ty),
+            "slightly displaced purple 2x2 preview still covers all four legal target cells");
+        check(!DragAlignment.targetCellPreview(empty,empty,frame,held,tx,ty),
+            "unchanged static board cannot authorize a release");
+        Game.Image oneCellWrong=lifted(empty,frame,held,left+frame.cell,top);
+        check(!DragAlignment.targetCellPreview(oneCellWrong,empty,frame,held,tx,ty),
+            "a block placed one entire column away cannot authorize release");
+        Game.Image halfCellWrong=lifted(empty,frame,held,left+frame.cell*.55f,top);
+        check(!DragAlignment.targetCellPreview(halfCellWrong,empty,frame,held,tx,ty),
+            "a block substantially beyond the correct snap basin must fail interior probes");
+        Game.Shape notPurple=new Game.Shape(2,square,551.5f,1174,0xffff4400);
+        check(!DragAlignment.targetCellPreview(snapped,empty,frame,notPurple,tx,ty),
+            "different-colored transient artwork cannot authorize release");
+    }
+
     static void alignRecoveryBehindOverlay() throws Exception {
         Game.Image baseline=load("empty-gold.png");
         Game.Frame board=Recognizer.read(baseline);
@@ -542,6 +573,7 @@ public final class CoreChecks {
         check(inferred.combo()==101,"failed OCR does not reset known chain");
     }
     public static void main(String[] args) throws Exception {
+        snappedTargetPreviewRegression();
         alignRecoveryBehindOverlay();
         comboCaptionDetection();
         highScorePlanning();
