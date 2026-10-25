@@ -130,18 +130,16 @@ public final class DragAlignment {
         return selected;
     }
     /**
-     * Recovery ONLY after a failed normal probe followed by a reverse probe.
+     * Retry-only recovery when the PICKED sprite overlaps its own small
+     * tray thumbnail. In user v1.3.6 the before.png thumbnail at x~361
+     * overlaps TWO of four final L-piece cell centers at x~382. The normal
+     * matcher correctly requires every center to be novel, and thus misses
+     * the genuine -78px movement ordered by a -52px probe.
      *
-     * Some vendor/game render pipelines deliver the visible sprite a full
-     * gesture late. In the v1.3.6 diagnostic the visible red L-piece moved
-     * x=262 -> 340 (+78 px) while the most RECENT pointer command was -52 px.
-     * The normal directed matcher correctly rejects this as contradictory.
-     *
-     * Do not equate a contradictory displacement with a successful directed
-     * probe. Instead prove uniquely that the SAME complete lifted shape was
-     * newly painted in BOTH frames and changed its position appreciably.
-     * The controller must still align it to a legal destination and validate
-     * the final board before releasing, never release from this recovery.
+     * Keep STRICT move direction verification. Loosen ONLY novelty versus
+     * the pre-pick frame, and ONLY with the same complete shape, >=half newly
+     * painted centers, and a unique previous/current moving pair. Never use
+     * this result alone to release the piece at a target.
      */
     public static Origin locatePickedAfterRetry(Game.Image im,Game.Image before,
             Game.Image previous,Game.Frame frame,Game.Shape shape,
@@ -153,28 +151,28 @@ public final class DragAlignment {
         float cell=frame.cell;
         float command=(float)Math.hypot(retryDX,retryDY);
         if(command<cell*.30f || command>cell*1.5f)return null;
-        List<Origin> now=stagedCandidates(im,before,frame,shape,fingerX,fingerY);
+        // The first frame may overlap the thumbnail too; allow the same
+        // limited exemption while requiring both frames to show an entire
+        // well-shaped, mostly new sprite.
+        List<Origin> now=stagedCandidates(im,before,frame,shape,fingerX,fingerY,true);
         List<Origin> old=stagedCandidates(previous,before,frame,shape,
-                fingerX-retryDX,fingerY-retryDY);
-        // Multiple newly painted copies are ambiguous (dragging previews,
-        // same-colored nearby pieces); conservatively stop instead.
+                fingerX-retryDX,fingerY-retryDY,true);
         if(now.size()!=1 || old.size()!=1)return null;
         Origin n=now.get(0),o=old.get(0);
         if(n.confidence<.88f||o.confidence<.88f)return null;
         float mx=n.x-o.x,my=n.y-o.y;
         float moved=(float)Math.hypot(mx,my);
-        if(moved<cell*.35f || moved>cell*2.25f)return null;
-        // Visual movement must be along the probe's AXIS, although rendered
-        // direction may lag one submitted gesture behind.
-        if(Math.abs(retryDX)>=Math.abs(retryDY)) {
-            if(Math.abs(mx)<cell*.33f || Math.abs(my)>cell*.32f)return null;
-        } else {
-            if(Math.abs(my)<cell*.33f || Math.abs(mx)>cell*.32f)return null;
-        }
+        if(moved<cell*.35f || moved>command+cell*.58f)return null;
+        if(Math.abs(mx-retryDX)>cell*.58f ||
+           Math.abs(my-retryDY)>cell*.58f)return null;
+        if(retryDX*mx+retryDY*my < command*command*.55f)return null;
         return n;
     }
 
     private static List<Origin> stagedCandidates(Game.Image im,Game.Image before,Game.Frame frame,Game.Shape shape,float fingerX,float fingerY) {
+        return stagedCandidates(im,before,frame,shape,fingerX,fingerY,false);
+    }
+    private static List<Origin> stagedCandidates(Game.Image im,Game.Image before,Game.Frame frame,Game.Shape shape,float fingerX,float fingerY,boolean allowThumbnailOverlap) {
         // Normally the sprite is above/left of the held finger. Some Android
         // Classic drag skins also render it 1.2-2.2 board cells to the RIGHT
         // of the finger. In the uploaded v1.3.4 diagnostic the previous
@@ -182,12 +180,12 @@ public final class DragAlignment {
         // historical maxX=fingerX+cell=496 clipped away a valid moving
         // shape. First scan the fast, historical window, then only widen if
         // it was empty. Shape uniqueness and motion proof are still required.
-        List<Origin> near=stagedCandidates(im,before,frame,shape,fingerX,fingerY,false);
+        List<Origin> near=stagedCandidates(im,before,frame,shape,fingerX,fingerY,false,allowThumbnailOverlap);
         return near.isEmpty()
-            ? stagedCandidates(im,before,frame,shape,fingerX,fingerY,true)
+            ? stagedCandidates(im,before,frame,shape,fingerX,fingerY,true,allowThumbnailOverlap)
             : near;
     }
-    private static List<Origin> stagedCandidates(Game.Image im,Game.Image before,Game.Frame frame,Game.Shape shape,float fingerX,float fingerY,boolean expanded) {
+    private static List<Origin> stagedCandidates(Game.Image im,Game.Image before,Game.Frame frame,Game.Shape shape,float fingerX,float fingerY,boolean expanded,boolean allowThumbnailOverlap) {
         List<Origin> result=new ArrayList<>();
         if(im.width!=before.width||im.height!=before.height)return result;
         float cell=frame.cell,step=Math.max(2,cell*.08f);
@@ -198,11 +196,17 @@ public final class DragAlignment {
         float minY=0,maxY=Math.min(im.height-shape.piece.h*cell,fingerY+cell*.5f);
         List<float[]> seeds=new ArrayList<>();
         for(float y=minY;y<=maxY;y+=step)for(float x=minX;x<=maxX;x+=step) {
-            float value=score(im,before,shape.piece,shape.color,x,y,cell,.3f,true);
-            // Candidate needs all occupied CELL CENTERS to be newly painted,
-            // plus >=80% color coverage and mostly clean outer edges. This
-            // tolerates a narrow HUD occlusion but not a stationary board tile.
+            float minNovel=allowThumbnailOverlap?.55f:.3f;
+            boolean allCentersChanged=!allowThumbnailOverlap;
+            float value=score(im,before,shape.piece,shape.color,x,y,cell,
+                minNovel,allCentersChanged);
+            // Normal path keeps every center newly changed. Retry overlap
+            // path still demands >= half newly painted centers and >55%
+            // entirely new color samples, plus strong full-shape color/edges.
             if(value<.86f)continue;
+            if(allowThumbnailOverlap &&
+                newlyPaintedCenters(im,before,shape,x,y,cell) <
+                    (shape.piece.xs.length+1)/2)continue;
             float[] seed=null;
             for(float[] candidate:seeds)if(Math.abs(x-candidate[0])<cell*.55f&&Math.abs(y-candidate[1])<cell*.55f){seed=candidate;break;}
             if(seed==null) {
@@ -211,12 +215,26 @@ public final class DragAlignment {
             } else if(value>seed[4]){seed[2]=x;seed[3]=y;seed[4]=value;}
         }
         for(float[] seed:seeds) {
-            Origin origin=refine(im,before,frame,shape,minX,maxX,minY,maxY,.3f,true,seed[2],seed[3],seed[4]);
+            Origin origin=refine(im,before,frame,shape,minX,maxX,minY,maxY,
+                allowThumbnailOverlap?.55f:.3f,!allowThumbnailOverlap,
+                seed[2],seed[3],seed[4]);
             boolean duplicate=false;
             for(Origin old:result)if(Math.abs(origin.x-old.x)<cell*.25f&&Math.abs(origin.y-old.y)<cell*.25f)duplicate=true;
             if(!duplicate)result.add(origin);
         }
         return result;
+    }
+    private static int newlyPaintedCenters(Game.Image im,Game.Image before,
+            Game.Shape shape,float x,float y,float cell) {
+        int changed=0;
+        for(int i=0;i<shape.piece.xs.length;i++) {
+            float cx=x+(shape.piece.xs[i]+.5f)*cell;
+            float cy=y+(shape.piece.ys[i]+.5f)*cell;
+            int color=im.at(cx,cy);
+            if(same(color,shape.color) &&
+               Recognizer.distance(color,before.at(cx,cy))>60)changed++;
+        }
+        return changed;
     }
     private static Origin search(Game.Image im,Game.Image before,Game.Frame frame,Game.Shape shape,float minX,float maxX,float minY,float maxY,float minNovel,boolean changedCenters) {
         if(im.width!=before.width||im.height!=before.height)return null;
