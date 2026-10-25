@@ -367,6 +367,20 @@ public final class CoreChecks {
         Game.Image withStatic=lifted(moving,gf,ell,241,gf.top+gf.cell);
         DragAlignment.Origin tracked=DragAlignment.locateMoving(withStatic,gold,two,gf,ell,350+delta,1320,delta,0);
         check(tracked!=null&&Math.abs(tracked.x-(241+delta))<gf.cell*.13&&Math.abs(tracked.y-1008)<gf.cell*.13,"motion evidence follows held block and rejects static duplicate");
+        // Captured v1.0.0 NO_HELD_MATCH diagnostic: a commanded .65-cell
+        // probe can move a real picked piece a full displayed cell.
+        Game.Image snapPrev=lifted(gold,gf,ell,300,1008);
+        Game.Image snapNow=lifted(gold,gf,ell,300-gf.cell,1008);
+        DragAlignment.Origin quantized=DragAlignment.locateMoving(snapNow,gold,snapPrev,gf,ell,
+            400-gf.cell*.65f,1320,-gf.cell*.65f,0);
+        check(quantized!=null && Math.abs(quantized.x-(300-gf.cell))<gf.cell*.14f,
+            "a whole-cell-rendered block must match the same-direction subcell probe");
+        check(DragAlignment.locateMoving(snapPrev,gold,snapPrev,gf,ell,
+            400-gf.cell*.65f,1320,-gf.cell*.65f,0)==null,
+            "a stationary tray or preview can never count as held motion");
+        check(DragAlignment.locateMoving(snapNow,gold,snapPrev,gf,ell,
+            400-gf.cell*.65f,1320,+gf.cell*.65f,0)==null,
+            "movement opposite to the requested probe cannot release a block");
         Game.Image withSnapped=lifted(moving,gf,ell,241+gf.cell,gf.top+gf.cell);
         tracked=DragAlignment.locateMoving(withSnapped,gold,two,gf,ell,350+delta,1320,delta,0);
         check(tracked!=null&&Math.abs(tracked.y-1008)<gf.cell*.13,"one-cell snapped preview is not continuous finger motion");
