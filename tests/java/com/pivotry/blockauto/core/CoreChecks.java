@@ -611,7 +611,48 @@ public final class CoreChecks {
         catch(IllegalArgumentException expected){rejected=true;}
         check(rejected,"non-finite tracking geometry must stop instead of injecting a touch");
     }
-    public static void main(String[] args) throws Exception {        statusOverlayOcclusionRegression();
+    /**
+     * User v1.3.4 diagnostic: 720x1560, empty board, purple vertical 2-cell
+     * sprite at x=511..587 then x=433..509, with unchanged y=1043..1199.
+     * Previous finger x=416, latest finger x=364, requested delta=-52.
+     * The original tracker scanned only up to old fingerX+cell=496 and
+     * rejected the real x=511 sprite before testing observed motion.
+     * Synthetic frames reproduce the exact geometry without publishing
+     * private diagnostic screenshots in the repository.
+     */
+    static void rightOfFingerPickupRegression() throws Exception {
+        Game.Image fixture=load("empty-gold.png");
+        Game.Frame frame=Recognizer.read(fixture);
+        check(frame!=null&&fixture.width==720&&fixture.height==1560,
+            "720x1560 reference for the v1.3.4 diagnostic");
+        float cell=frame.cell;
+        Game.Piece vertical2=new Game.Piece(0,0,0,1);
+        Game.Shape purple=new Game.Shape(0,vertical2,149.5f,1174f,0xffa65be1);
+        int[] pixels=new int[fixture.width*fixture.height];
+        java.util.Arrays.fill(pixels,0xff243353);
+        Game.Image baseline=new Game.Image(fixture.width,fixture.height,pixels);
+        Game.Image old=lifted(baseline,frame,purple,511,1043);
+        Game.Image latest=lifted(baseline,frame,purple,433,1043);
+        float oldFingerX=416f,newFingerX=364f,fingerY=1246.625f;
+        check(511>oldFingerX+cell,
+            "prior real sprite was beyond the historical one-cell scan window");
+        DragAlignment.Origin tracked=DragAlignment.locateMoving(
+            latest,baseline,old,frame,purple,newFingerX,fingerY,-52,0);
+        check(tracked!=null&&Math.abs(tracked.x-433)<cell*.16f &&
+            Math.abs(tracked.y-1043)<cell*.16f,
+            "grid-quantized 78px purple held movement must match 52px left probe");
+        check(DragAlignment.locateMoving(old,baseline,old,frame,purple,
+            newFingerX,fingerY,-52,0)==null,
+            "stationary purple sprite cannot masquerade as held motion");
+        check(DragAlignment.locateMoving(latest,baseline,old,frame,purple,
+            newFingerX,fingerY,+52,0)==null,
+            "a block moving opposite the commanded probe cannot be accepted");
+        check(DragAlignment.locate(baseline,baseline,frame,purple,newFingerX,fingerY)==null,
+            "expanded window must not mistake an unchanged board for a picked piece");
+    }
+
+    public static void main(String[] args) throws Exception {        rightOfFingerPickupRegression();
+        statusOverlayOcclusionRegression();
         boundedDraggedPointerRegression();
 
         snappedTargetPreviewRegression();
