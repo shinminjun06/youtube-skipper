@@ -152,6 +152,14 @@ class AutoService : AccessibilityService() {
         floating = layout; toggleButton = button; modeButton=mode; statusText = status
         setAutomatic(CaptureService.active?.isAutomatic() ?: false)
     }
+    /** In recommendation mode the overlay is never itself treated as a tile. */
+    fun cleanCaptured(image: com.pivotry.blockauto.core.Game.Image): com.pivotry.blockauto.core.Game.Image {
+        val g=guide ?: return image
+        val coords=IntArray(g.cells.size*2)
+        g.cells.forEachIndexed { i,p -> coords[2*i]=p.first;coords[2*i+1]=p.second }
+        return com.pivotry.blockauto.core.GuideMask.strip(
+            image,g.left,g.top,g.cell,g.width,g.height,coords)
+    }
     fun showGuide(left: Float,top: Float,cell: Float,cells: List<Pair<Int,Int>>,width: Int,height: Int) {
         main.post {
             guideClear?.let { main.removeCallbacks(it) }; guideClear=null
