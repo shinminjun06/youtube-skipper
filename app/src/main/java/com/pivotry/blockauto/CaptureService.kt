@@ -417,9 +417,10 @@ class CaptureService : Service() {
             android.util.Log.i("BlockBlastAuto","ALIGN target cells confirmed, render offset="+dx+","+dy)
             gesture(epoch,Phase.VERIFY) { service,done -> service.moveHeld(fingerX*scaleX(frame),fingerY*scaleY(frame),false,150,done) }
         } else {
-            // Allow a few bounded recovery moves for screen snap offsets.
-            // No uncertainty bypass: 5 failed corrections still stop safely.
-            if (corrections++ >= 5) {
+            // Damped short correction strokes avoid a large vertical
+            // finger jump changing the game's lift offset mid-gesture.
+            // The controller never releases without stable local evidence.
+            if (corrections++ >= 10) {
                 freezeFailure(image,"CORRECTION_LIMIT")
                 halt("위치 보정 실패 · 진단 저장 후 정지")
                 return
@@ -431,10 +432,14 @@ class CaptureService : Service() {
                 halt("블록 추적 좌표 불일치 · 안전 정지")
                 return
             }
-            fingerX += dx; fingerY += dy
+            val stepX=DragStep.axis(dx,frame.cell)
+            val stepY=DragStep.axis(dy,frame.cell)
+            fingerX += stepX; fingerY += stepY
             if (fingerX<2 || fingerX>frame.width-2 || fingerY<2 || fingerY>frame.height-2) { halt("터치 범위를 벗어나는 배치 · 정지"); return }
-            status("블록 위치 보정 " + corrections)
-            gesture(epoch,Phase.ALIGN) { service,done -> service.moveHeld(fingerX*scaleX(frame),fingerY*scaleY(frame),true,420,done) }
+            android.util.Log.i("BlockBlastAuto","correction "+corrections+" requested="+dx+","+dy+
+                " bounded="+stepX+","+stepY+" actualFinger="+fingerX+","+fingerY)
+            status("블록 위치 단계 보정 " + corrections)
+            gesture(epoch,Phase.ALIGN) { service,done -> service.moveHeld(fingerX*scaleX(frame),fingerY*scaleY(frame),true,350,done) }
         }
     }
     private fun freezeFailure(image: Game.Image,reason: String) {
