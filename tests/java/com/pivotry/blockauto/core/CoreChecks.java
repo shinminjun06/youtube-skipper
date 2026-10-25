@@ -1070,6 +1070,57 @@ public final class CoreChecks {
      * sprite beyond right edge, leaving a clipped last screenshot and
      * causing ALIGN/NO_HELD_MATCH. Probe was deliberately horizontal.
      */
+    static void diagnostic13OccupiedGreenBoardRegression() {
+        // User v1.4.7 diagnostic (13): full 2x3 green sprite
+        // at approximately (371,671), target (361,447.5), finger
+        // (402.16,1043.75), field 720x1560, cell 79.5.
+        // The one unchanged green center is actually occupied
+        // board coordinate col=4,row=4.
+        int w=720,h=1560,green=0xff21c63f,bg=0xff30466d;
+        int[] old=new int[w*h];
+        java.util.Arrays.fill(old,bg);
+        for(int y=687;y<764;y++)for(int x=361;x<439;x++)
+            old[y*w+x]=green;
+        Game.Image before=new Game.Image(w,h,old);
+        float cell=79.5f;
+        Game.Piece twoByThree=new Game.Piece(
+            0,0,1,0,0,1,1,1,0,2,1,2);
+        Game.Shape selected=new Game.Shape(1,twoByThree,341.5f,1192.5f,green);
+        long board=1L<<(4*8+4);
+        Game.Frame frame=new Game.Frame(board,java.util.Arrays.asList(selected),
+            43f,368f,cell,w,h,1f);
+        Game.Image moved=lifted(before,frame,selected,371,671);
+        check(DragAlignment.locate(moved,before,frame,selected,
+                402.16f,1043.75f)==null,
+            "normal all-new-centres lookup rejects overlapping old green tile");
+        DragAlignment.Origin recovered=DragAlignment.locateOverOccupiedBoard(
+            moved,before,frame,selected,402.16f,1043.75f);
+        check(recovered!=null && Math.abs(recovered.x-371)<cell*.18f &&
+                Math.abs(recovered.y-671)<cell*.18f,
+            "exactly one occupied old same-color center is recoverable");
+
+        Game.Frame noBoard=new Game.Frame(0L,frame.shapes,43,368,cell,w,h,1);
+        check(DragAlignment.locateOverOccupiedBoard(
+            moved,before,noBoard,selected,402.16f,1043.75f)==null,
+            "without actual board occupancy no old-color exemption");
+        Game.Image unchanged=new Game.Image(w,h,old.clone());
+        check(DragAlignment.locateOverOccupiedBoard(
+            unchanged,before,frame,selected,402.16f,1043.75f)==null,
+            "static board square cannot masquerade as a held 2x3");
+        Game.Image second=lifted(before,frame,selected,150,671);
+        Game.Image twoCandidates=lifted(second,frame,selected,371,671);
+        check(DragAlignment.locateOverOccupiedBoard(
+            twoCandidates,before,frame,selected,402.16f,1043.75f)==null,
+            "ambiguous duplicate held green rectangles cannot be accepted");
+        int[] missing=moved.pixels.clone();
+        for(int y=830;y<907;y++)for(int x=450;x<527;x++)
+            missing[y*w+x]=bg;
+        check(DragAlignment.locateOverOccupiedBoard(
+            new Game.Image(w,h,missing),before,frame,
+            selected,402.16f,1043.75f)==null,
+            "one missing 2x3 cell must invalidate whole-shape evidence");
+    }
+
     static void diagnostic11StackedPreviewRegression() {
         // Field evidence: 720x1560 / cell 79.875, a cyan 1x4 preview
         // at board column 4 row 0 and a separate held 1x4 immediately
@@ -1290,6 +1341,7 @@ public final class CoreChecks {
     }
 
     public static void main(String[] args) throws Exception {
+        diagnostic13OccupiedGreenBoardRegression();
         diagnostic11StackedPreviewRegression();
         pixelSamplerGeometryRegression();
         frameReuseSafetyRegression();

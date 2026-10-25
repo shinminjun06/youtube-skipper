@@ -163,6 +163,83 @@ public final class DragAlignment {
         List<Origin> candidates=stagedCandidates(im,before,frame,shape,fingerX,fingerY);
         return candidates.size()==1?candidates.get(0):null;
     }
+
+    /**
+     * Diagnostic (13): an already occupied, same-colour BOARD cell can hide
+     * one pixel-center of an actually held 2x3 green piece. This recovery
+     * is restricted to the staged ALIGN phase by its caller; it NEVER
+     * authorizes releasing a piece at the target on its own.
+     *
+     * Require FIVE fresh centers of SIX, one remaining old center in an
+     * explicitly occupied board cell (not any tray or arbitrary screenshot
+     * decoration), high new-pixel coverage, and a unique whole-piece match.
+     */
+    public static Origin locateOverOccupiedBoard(Game.Image im,Game.Image before,
+            Game.Frame frame,Game.Shape shape,float fingerX,float fingerY){
+        if(im==null||before==null||frame==null||shape==null||
+           im.width!=before.width||im.height!=before.height||
+           !Float.isFinite(fingerX)||!Float.isFinite(fingerY)||
+           !Float.isFinite(frame.cell)||frame.cell<=10f||
+           shape.piece.w!=2||shape.piece.h!=3||shape.piece.xs.length!=6)
+            return null;
+        float cell=frame.cell,step=Math.max(2f,cell*.10f);
+        float minX=Math.max(0,fingerX-(shape.piece.w+2.5f)*cell);
+        float maxX=Math.min(im.width-shape.piece.w*cell,fingerX+3f*cell);
+        float minY=Math.max(0,fingerY-8.5f*cell);
+        float maxY=Math.min(im.height-shape.piece.h*cell,fingerY-.8f*cell);
+        if(minX>maxX||minY>maxY)return null;
+        List<float[]> seeds=new ArrayList<>();
+        for(float y=minY;y<=maxY;y+=step)for(float x=minX;x<=maxX;x+=step){
+            // Score includes all six colored squares; shade samples must
+            // have >=62% novelty. The single old center is checked below.
+            float strength=score(im,before,shape.piece,shape.color,
+                x,y,cell,.62f,false);
+            if(strength<.89f||
+               !oneOldBoardCenter(im,before,frame,shape,x,y))continue;
+            float[] group=null;
+            for(float[] c:seeds)if(Math.abs(c[0]-x)<cell*.55f &&
+                               Math.abs(c[1]-y)<cell*.55f){group=c;break;}
+            if(group==null){
+                if(seeds.size()>=2)return null; // ambiguous whole shapes
+                seeds.add(new float[]{x,y,x,y,strength});
+            }else if(strength>group[4]){
+                group[2]=x;group[3]=y;group[4]=strength;
+            }
+        }
+        if(seeds.size()!=1)return null;
+        float[] best=seeds.get(0);
+        Origin found=refine(im,before,frame,shape,minX,maxX,minY,maxY,
+            .62f,false,best[2],best[3],best[4]);
+        return oneOldBoardCenter(im,before,frame,shape,found.x,found.y)
+            ?found:null;
+    }
+
+    private static boolean oneOldBoardCenter(Game.Image im,Game.Image before,
+            Game.Frame frame,Game.Shape shape,float x,float y){
+        float cell=frame.cell;
+        int fresh=0,oldBoard=0;
+        for(int i=0;i<shape.piece.xs.length;i++){
+            float cx=x+(shape.piece.xs[i]+.5f)*cell;
+            float cy=y+(shape.piece.ys[i]+.5f)*cell;
+            int now=im.at(cx,cy),was=before.at(cx,cy);
+            if(!same(now,shape.color))return false;
+            if(Recognizer.distance(now,was)>60){fresh++;continue;}
+            if(!same(was,shape.color))return false;
+            int col=(int)Math.floor((cx-frame.left)/cell);
+            int row=(int)Math.floor((cy-frame.top)/cell);
+            if(col<0||col>=8||row<0||row>=8||
+               (frame.board&(1L<<(row*8+col)))==0L)return false;
+            // The old unchanged centre MUST belong near the middle
+            // of that occupied board cell, not an arbitrary color patch.
+            float centerX=frame.left+(col+.5f)*cell;
+            float centerY=frame.top+(row+.5f)*cell;
+            if(Math.abs(cx-centerX)>cell*.35f||
+               Math.abs(cy-centerY)>cell*.35f)return false;
+            oldBoard++;
+        }
+        return fresh==5&&oldBoard==1;
+    }
+
     /** A deliberate sub-cell pointer move distinguishes continuous held motion
      * from stationary or whole-cell-snapped previews. Ambiguity never releases. */
     public static Origin locateMoving(Game.Image im,Game.Image before,Game.Image previous,Game.Frame frame,Game.Shape shape,

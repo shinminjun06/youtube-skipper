@@ -87,6 +87,7 @@ class CaptureService : Service() {
     private val dragResponse = DragResponse()
     /** Start at v1.4.2-safe speed; accelerate only after verified clean moves. */
     private val pace = AdaptivePace()
+    private var usedBoardOverlapRecovery = false
     private var lastServoFailureDetail: String? = null
     private var lastCorrectionOrigin: DragAlignment.Origin? = null
     private var lastCorrectionStepX=0f
@@ -172,6 +173,7 @@ class CaptureService : Service() {
             pace.reset()
             lastCorrectionOrigin=null
             lastServoFailureDetail=null
+            usedBoardOverlapRecovery=false
             pendingDragSample=null
             directDragUsed=false; directDragCount=0; stagedDragCount=0
             verifiedDirectCount=0; verifiedStagedCount=0
@@ -374,6 +376,7 @@ class CaptureService : Service() {
         }
         before = frame; beforeImage = image; probeImage = null
         pendingDragSample=null
+        usedBoardOverlapRecovery=false
         dragResponse.reset();lastCorrectionOrigin=null
         probeDX = 0f; probeDY = 0f; selected = shape
         verifier = MoveVerifier(frame,move.piece,move.x,move.y)
@@ -500,8 +503,28 @@ class CaptureService : Service() {
             DragAlignment.locateHeldBelowSnappedPreview(image,beforeImage!!,frame,
                 shape,targetX,targetY,fingerX,fingerY)
             else null
+        val regularHeld=if(phase==Phase.ALIGN && targetMatch==null && stackedPreview==null)
+            DragAlignment.locate(image,beforeImage!!,frame,shape,fingerX,fingerY)
+            else null
+        // Diagnostic (13): the moving green 2x3 overlaid ONE occupied
+        // same-colour BOARD cell. Keep the ordinary full-shape tracker first.
+        // This evidence is correction-only; never enough to release.
+        val occupiedBoardRecovery=if(phase==Phase.ALIGN && regularHeld==null &&
+                targetMatch==null && stackedPreview==null &&
+                !directDragUsed && corrections>=1)
+            DragAlignment.locateOverOccupiedBoard(image,beforeImage!!,frame,
+                shape,fingerX,fingerY)
+            else null
         val found=if(phase==Phase.PICKED) pickupMotion?.latest
-            else targetMatch ?: stackedPreview ?: DragAlignment.locate(image,beforeImage!!,frame,shape,fingerX,fingerY)
+            else targetMatch ?: stackedPreview ?: regularHeld ?: occupiedBoardRecovery
+        if(occupiedBoardRecovery!=null) {
+            usedBoardOverlapRecovery=true
+            pace.uncertainty()
+            lastCorrectionOrigin=null // no motor gain learning from this proxy
+            android.util.Log.i("BlockBlastAuto",
+                "BOARD_OVERLAP_RECOVERY 2x3 correction-only origin="+
+                occupiedBoardRecovery.x+","+occupiedBoardRecovery.y)
+        }
         if(sourceOverlapRecovery!=null)
             android.util.Log.i("BlockBlastAuto","pickup confirmed with selected-tray source mask; "+
                 "directed unique shape at "+sourceOverlapRecovery.latest.x+","+sourceOverlapRecovery.latest.y)
@@ -596,7 +619,7 @@ class CaptureService : Service() {
             // board and consumed tray slot after the pointer is released.
             // A stacked-preview proxy is NOT the genuine moving sprite
             // coordinate, so it must NEVER update finger-to-sprite calibration.
-            if(stackedPreview!=null) {
+            if(stackedPreview!=null || usedBoardOverlapRecovery) {
                 pendingDragSample=null
                 pace.uncertainty()
                 android.util.Log.i("BlockBlastAuto",
@@ -678,6 +701,7 @@ class CaptureService : Service() {
             .put("observedOriginX",observed?.x ?: JSONObject.NULL)
             .put("observedOriginY",observed?.y ?: JSONObject.NULL)
             .put("servoFailureDetail",lastServoFailureDetail ?: JSONObject.NULL)
+            .put("usedBoardOverlapRecovery",usedBoardOverlapRecovery)
             .put("pickupRetry",phase==Phase.PICKED && corrections==1)
             .put("calibratedDirectStart",directDragUsed)
             .put("exactShapeCalibrationConfidence",dragCalibration.confidence(shape.slot,shape.piece.key))
