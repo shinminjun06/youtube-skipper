@@ -248,11 +248,12 @@ class AutoService : AccessibilityService() {
         if(autoDock) floating?.post {dockControls(true)}
     } }
 
-    fun beginDrag(sx: Float,sy: Float,tx: Float,ty: Float,expectedApp: String?,done: (Boolean)->Unit) {
+    fun beginDrag(sx: Float,sy: Float,tx: Float,ty: Float,expectedApp: String?,done: (Boolean)->Unit,travelDuration: Long=500L) {
         check(Looper.myLooper() == Looper.getMainLooper())
         val actualApp = foregroundPackage()
         lastGestureError = ""
         if (CaptureService.active?.isAutomatic()!=true) { lastGestureError="추천 모드에서는 자동 터치 금지"; done(false); return }
+        if(travelDuration !in 335L..650L) {lastGestureError="안전한 드래그 시간 범위 초과";done(false);return}
         // Enforce clear screenshots before any held pointer is created,
         // even if the main-thread running-state callback was delayed.
         syncControlsVisibility(true)
@@ -263,7 +264,7 @@ class AutoService : AccessibilityService() {
         main.removeCallbacks(watchdog); main.postDelayed(watchdog,14500)
         val pickup = GestureDescription.StrokeDescription(Path().apply { moveTo(sx,sy) },0,160,true)
         send(pickup,sx,sy) { ok ->
-            if (ok) moveHeld(tx,ty,true,500,done) else done(false)
+            if (ok) moveHeld(tx,ty,true,travelDuration,done) else done(false)
         }
     }
     fun moveHeld(tx: Float,ty: Float,keep: Boolean,duration: Long = 420,done: (Boolean)->Unit) {
