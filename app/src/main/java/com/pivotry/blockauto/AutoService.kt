@@ -104,7 +104,7 @@ class AutoService : AccessibilityService() {
                     MotionEvent.ACTION_MOVE -> {
                         // While auto input is running the dock must remain
                         // outside the board/lift path. The stop tap still works.
-                        if(autoDock && CaptureService.active?.isRunning()==true)
+                        if(autoDock)
                             return@setOnTouchListener true
                         val dx=event.rawX-downX; val dy=event.rawY-downY
                         if(abs(dx)>slop || abs(dy)>slop) moved=true
@@ -206,14 +206,15 @@ class AutoService : AccessibilityService() {
         if(!::wm.isInitialized || !view.isAttachedToWindow)return
         val bounds=wm.maximumWindowMetrics.bounds
         val margin=(6*resources.displayMetrics.density).toInt()
-        val width=if(view.width>0)view.width else (bounds.width()*.44f).toInt()
-        val height=if(view.height>0)view.height else (bounds.height()*.16f).toInt()
-        params.x=if(automatic) (bounds.width()-width-margin).coerceAtLeast(0)
-            else (bounds.width()*.53f).toInt()
-        params.y=if(automatic) (bounds.height()-height-margin).coerceAtLeast(0) else margin
+        // Gravity.BOTTOM anchors against the actual available window area.
+        // Computing top-based y from maximumWindowMetrics pushed part of the
+        // controls under gesture-nav bars on some fullscreen Android phones.
+        params.gravity=if(automatic) Gravity.BOTTOM or Gravity.END else Gravity.TOP or Gravity.START
+        params.x=if(automatic)margin else (bounds.width()*.53f).toInt()
+        params.y=margin
         runCatching { wm.updateViewLayout(view,params) }
         android.util.Log.i("BlockBlastAuto","controls docked "+(if(automatic)"BOTTOM" else "TOP")+
-            " at "+params.x+","+params.y+" bounds="+bounds.width()+"x"+bounds.height())
+            " margin="+margin+" bounds="+bounds.width()+"x"+bounds.height())
     }
     fun setAutomatic(value: Boolean) { main.post {
         autoDock=value
