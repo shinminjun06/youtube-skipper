@@ -560,8 +560,14 @@ class CaptureService : Service() {
             // The game may translate an input by 1.5x (real v1.4.1 case).
             // Divide by the measured visual response and prevent the sprite
             // from leaving the image before it can be reobserved.
-            val step=dragResponse.correction(dx,dy,found.x,found.y,
-                shape.piece.w,shape.piece.h,frame.cell,frame.width,frame.height)
+            val step=try {
+                dragResponse.correction(dx,dy,found.x,found.y,
+                    shape.piece.w,shape.piece.h,frame.cell,frame.width,frame.height)
+            } catch (_: IllegalArgumentException) {
+                freezeFailure(image,"UNSAFE_OR_CLIPPED_SERVO_GEOMETRY")
+                halt("화면 가장자리 위치를 확실히 확인할 수 없어 안전 정지")
+                return
+            }
             val stepX=step[0]; val stepY=step[1]
             if(abs(stepX)<.5f && abs(stepY)<.5f) {
                 freezeFailure(image,"CORRECTION_BLOCKED_BY_CAPTURE_BOUNDARY")
