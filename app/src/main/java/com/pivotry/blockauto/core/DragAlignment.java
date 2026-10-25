@@ -396,6 +396,100 @@ public final class DragAlignment {
         return new Origin(targetX,targetY,.92f);
     }
 
+    /**
+     * Diagnostic (18): a BLUE two-cell diagonal (" .#" / "#.") completes a
+     * nearly full row. The clear animation paints ALL eight original tiles
+     * BLUE, so strict moving-sprite edge isolation rejects the genuine piece.
+     *
+     * This is deliberately NOT a generic targetCellPreview release:
+     *   - Only the exact diagonal orientation with a legal SINGLE row clear;
+     *   - The upper/right square must be the ONE pre-placement empty cell;
+     *   - At least seven cells in that row must newly show the blue clear glow;
+     *   - The lower/left square must be a complete, separately visible BLUE
+     *     tile, with neither lateral neighboring cell acquiring a blue tile;
+     *   - The finger must trail below and near the selected sprite.
+     *
+     * The returned coordinate is a GRID PREVIEW PROXY, never physical motion
+     * evidence. Callers require two stable observations, then independently
+     * verify both the placed board and the consumed tray slot after release.
+     */
+    public static Origin locateDiagonalLineClearPreview(Game.Image current,
+            Game.Image before,Game.Frame frame,Game.Shape held,
+            float targetX,float targetY,float fingerX,float fingerY) {
+        if(current==null||before==null||frame==null||held==null||
+           current.width!=before.width||current.height!=before.height||
+           current.width!=frame.width||current.height!=frame.height||
+           !Float.isFinite(targetX)||!Float.isFinite(targetY)||
+           !Float.isFinite(fingerX)||!Float.isFinite(fingerY)||
+           !Float.isFinite(frame.cell)||frame.cell<=10f)return null;
+        Game.Piece p=held.piece;
+        if(p.w!=2||p.h!=2||p.xs.length!=2||
+           p.xs[0]!=1||p.ys[0]!=0||
+           p.xs[1]!=0||p.ys[1]!=1)return null;
+        if(Recognizer.b(held.color)<Recognizer.r(held.color)+75 ||
+           Recognizer.b(held.color)<Recognizer.g(held.color)+55)return null;
+        float cell=frame.cell;
+        int col=Math.round((targetX-frame.left)/cell);
+        int row=Math.round((targetY-frame.top)/cell);
+        if(col<0||col>6||row<0||row>6||
+           Math.abs(frame.left+col*cell-targetX)>cell*.06f||
+           Math.abs(frame.top+row*cell-targetY)>cell*.06f)return null;
+        Rules.Placement placed=Rules.place(frame.board,p,col,row);
+        if(placed==null||placed.lines!=1)return null;
+        long rowMask=255L<<(row*8);
+        long missing=rowMask&~frame.board;
+        if(missing!=(1L<<(row*8+col+1)))return null;
+        // A snapped preview may lead the finger by several cells vertically.
+        // Reject screen effects completely disconnected from a held gesture.
+        if(fingerX<targetX-cell*.8f || fingerX>targetX+cell*3.5f ||
+           fingerY<targetY+cell*2.3f || fingerY>targetY+cell*6.4f)return null;
+        if(!targetCellPreview(current,before,frame,held,col,row))return null;
+
+        // The seven pre-existing board tiles must have visibly transitioned to
+        // clearing BLUE material. New material only at the target is insufficient:
+        // that can be a stationary sprite with no line-clear evidence.
+        int glow=0;
+        for(int x=0;x<8;x++) {
+            float cx=frame.left+(x+.5f)*cell;
+            float cy=frame.top+(row+.50f)*cell;
+            int now=current.at(cx,cy),was=before.at(cx,cy);
+            if(blueSpecularMaterial(now,held.color)&&
+               Recognizer.distance(now,was)>60)glow++;
+        }
+        if(glow<8)return null;
+
+        // Verify the tile BELOW the glowing row independently. Require a
+        // beveled bright face and dark lower face, all newly colored.
+        float bx=frame.left+col*cell,by=frame.top+(row+1)*cell;
+        int topBright=0,lowerMaterial=0;
+        for(float ox:new float[]{.39f,.61f}) {
+            int upper=current.at(bx+ox*cell,by+.39f*cell);
+            int lower=current.at(bx+ox*cell,by+.61f*cell);
+            if(same(upper,held.color)&&
+               Recognizer.distance(upper,before.at(bx+ox*cell,by+.39f*cell))>60)topBright++;
+            if(previewMaterial(lower,held.color)&&
+               Recognizer.distance(lower,before.at(bx+ox*cell,by+.61f*cell))>60)lowerMaterial++;
+        }
+        if(topBright!=2||lowerMaterial!=2)return null;
+
+        // Clear-row spill can tint the row below blue at its upper edge.
+        // At cell CENTER HEIGHT, the lateral neighbors must NOT acquire
+        // independent new blue tiles. This separates a diagonal tail from
+        // a lingering line glow or another active piece.
+        int checked=0;
+        for(int neighbor:new int[]{col-1,col+1}) {
+            if(neighbor<0||neighbor>=8)continue;
+            float nx=frame.left+(neighbor+.5f)*cell;
+            float ny=frame.top+(row+1+.61f)*cell;
+            int c=current.at(nx,ny),old=before.at(nx,ny);
+            if(previewMaterial(c,held.color)&&Recognizer.distance(c,old)>60)
+                return null;
+            checked++;
+        }
+        if(checked==0)return null;
+        return new Origin(targetX,targetY,.92f);
+    }
+
     /** Bright blue bevels drift toward pale cyan; the lower half of each
      * square must STILL match the selected tray's strict original blue. */
     private static boolean blueSpecularMaterial(int c,int target) {
