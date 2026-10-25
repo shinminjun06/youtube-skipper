@@ -1102,7 +1102,7 @@ public final class CoreChecks {
         int[] preview=glow.clone();
         for(int i=0;i<redL.xs.length;i++)
             paintCell(preview,width,height,left,top,cell,
-                redL.xs[i],6+redL.ys[i],0xfff78e8d);
+                redL.xs[i],6+redL.ys[i],0xffef787a);
         Game.Image actual=new Game.Image(width,height,preview);
         check(DragAlignment.targetCellPreview(actual,before,frame,selected,0,6),
             "all four actual L face cells visibly replace the original board");
