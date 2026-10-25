@@ -22,13 +22,13 @@ jobs:
       - name: Verify APK and record source revision
         run: |
           mkdir -p build/apk
-          cp app/build/outputs/apk/debug/app-debug.apk build/apk/BlockBlastAutoPlay-v1.4.18.apk
+          cp app/build/outputs/apk/debug/app-debug.apk build/apk/BlockBlastAutoPlay-v1.4.19.apk
           printf '%s\n' "$GITHUB_SHA" > build/apk/SOURCE_COMMIT.txt
-          sha256sum build/apk/BlockBlastAutoPlay-v1.4.18.apk > build/apk/SHA256SUMS.txt
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs build/apk/BlockBlastAutoPlay-v1.4.18.apk > build/apk/SIGNATURE.txt
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging build/apk/BlockBlastAutoPlay-v1.4.18.apk > build/apk/APK_INFO.txt
-          grep -F "package: name='com.pivotry.blockauto.autoplay' versionCode='52' versionName='1.4.18'" build/apk/APK_INFO.txt
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions build/apk/BlockBlastAutoPlay-v1.4.18.apk > build/apk/PERMISSIONS.txt
+          sha256sum build/apk/BlockBlastAutoPlay-v1.4.19.apk > build/apk/SHA256SUMS.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs build/apk/BlockBlastAutoPlay-v1.4.19.apk > build/apk/SIGNATURE.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging build/apk/BlockBlastAutoPlay-v1.4.19.apk > build/apk/APK_INFO.txt
+          grep -F "package: name='com.pivotry.blockauto.autoplay' versionCode='53' versionName='1.4.19'" build/apk/APK_INFO.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions build/apk/BlockBlastAutoPlay-v1.4.19.apk > build/apk/PERMISSIONS.txt
           # grep is present on the runner; do not rely on optional rg, which
           # previously let this permission silently pass on some environments.
           if grep -Fq "name='android.permission.INTERNET'" build/apk/PERMISSIONS.txt; then
