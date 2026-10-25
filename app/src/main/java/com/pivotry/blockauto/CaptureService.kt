@@ -757,8 +757,7 @@ class CaptureService : Service() {
         val targetRow=kotlin.math.round((targetY-frame.top)/frame.cell).toInt()
         val targetCellsMatch=phase==Phase.ALIGN && (targetMatch!=null ||
             stackedPreview!=null || comboClearPreview!=null || lineGlowPreview!=null ||
-                     diagonalLineClearPreview!=null ||
-             diagonalLineClearPreview!=null) &&
+            diagonalLineClearPreview!=null) &&
             (lineGlowPreview!=null || DragAlignment.targetCellPreview(image,beforeImage!!,frame,shape,targetColumn,targetRow))
         val snappedToTarget=targetCellsMatch && abs(dx)<frame.cell*.32f &&
             abs(dy)<frame.cell*.32f
