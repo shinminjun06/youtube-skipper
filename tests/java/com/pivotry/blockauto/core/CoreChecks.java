@@ -572,7 +572,48 @@ public final class CoreChecks {
         inferred.observeDisplayedCombo(-1);
         check(inferred.combo()==101,"failed OCR does not reset known chain");
     }
-    public static void main(String[] args) throws Exception {
+    /** Uploaded v1.3.3 failure, T shape. A 720x1560 image showed the
+     * sprite at (326,35) when the finger was near (346,574), while the
+     * floating status panel covered three of four occupied cell centers.
+     * The safe fix is to dock the panel BELOW the game instead of lowering
+     * the full-shape detection threshold to a single visible cell.
+     */
+    static void statusOverlayOcclusionRegression() throws Exception {
+        Game.Image before=load("empty-gold.png");
+        Game.Frame frame=Recognizer.read(before);
+        check(frame!=null,"board geometry for screenshot scale 720x1560");
+        Game.Piece tee=new Game.Piece(0,0,1,0,2,0,1,1);
+        Game.Shape held=new Game.Shape(0,tee,149.5f,1173.5f,0xfff3c846);
+        Game.Image unobscured=lifted(before,frame,held,326,35);
+        DragAlignment.Origin found=DragAlignment.locate(unobscured,before,frame,held,346,574);
+        check(found!=null && Math.abs(found.y-35)<frame.cell*.16f,
+            "yellow T held above board is trackable without covering HUD");
+        int[] blocked=unobscured.pixels.clone();
+        for(int y=69;y<294;y++)for(int x=190;x<483;x++)
+            blocked[y*unobscured.width+x]=0xff3d3d32;
+        Game.Image obscured=new Game.Image(unobscured.width,unobscured.height,blocked);
+        check(DragAlignment.locate(obscured,before,frame,held,346,574)==null,
+            "opaque floating overlay covering 3/4 centers invalidates safe visual tracking");
+    }
+    static void boundedDraggedPointerRegression() {
+        float cell=79.125f;
+        check(Math.abs(DragStep.axis(-662,cell))<=cell*2.00001f,
+            "large target delta must not move pointer 8 cells in one stroke");
+        check(Math.abs(DragStep.axis(+662,cell))<=cell*2.00001f,
+            "drag cap holds in either direction");
+        check(DragStep.axis(-662,cell)<0 && DragStep.axis(+662,cell)>0,
+            "drag correction preserves the direction of visual error");
+        check(Math.abs(DragStep.axis(12,cell)-7.44f)<.01f,
+            "near-target motion is damped for grid-snap stability");
+        check(DragStep.axis(0,cell)==0,"zero offset cannot trigger a jump");
+        boolean rejected=false;
+        try {DragStep.axis(Float.NaN,cell);}
+        catch(IllegalArgumentException expected){rejected=true;}
+        check(rejected,"non-finite tracking geometry must stop instead of injecting a touch");
+    }
+    public static void main(String[] args) throws Exception {        statusOverlayOcclusionRegression();
+        boundedDraggedPointerRegression();
+
         snappedTargetPreviewRegression();
         alignRecoveryBehindOverlay();
         comboCaptionDetection();
