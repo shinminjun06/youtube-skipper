@@ -57,3 +57,24 @@ if ! grep -Fq 'val stepY=DragStep.axis(dy,frame.cell)' app/src/main/java/com/piv
   echo 'FAIL: bounded held-block position correction missing' >&2
   exit 1
 fi
+
+# v1.3.5 diagnostic: fixed-position floating controls can hide the bottom
+# two of five occupied block centers even when docked below the board.
+# During automatic play the panel AND highlight must be invisible in the
+# captured frame, not merely moved to another fixed position.
+if ! grep -Fq 'val hide = autoDock && running' app/src/main/java/com/pivotry/blockauto/AutoService.kt; then
+  echo 'FAIL: autoplay capture-safe panel state missing' >&2
+  exit 1
+fi
+if ! grep -Fq 'floating?.visibility=if(hide) View.INVISIBLE else View.VISIBLE' app/src/main/java/com/pivotry/blockauto/AutoService.kt; then
+  echo 'FAIL: control panel can still hide dragged block centers' >&2
+  exit 1
+fi
+if ! grep -Fq 'guideView?.visibility=if(hide) View.INVISIBLE else View.VISIBLE' app/src/main/java/com/pivotry/blockauto/AutoService.kt; then
+  echo 'FAIL: highlight overlay can still pollute autoplay captures' >&2
+  exit 1
+fi
+if ! grep -Fq 'val x=if(visible)' app/src/main/java/com/pivotry/blockauto/AutoService.kt; then
+  echo 'FAIL: cancelling a hidden pointer could tap through to the game' >&2
+  exit 1
+fi
