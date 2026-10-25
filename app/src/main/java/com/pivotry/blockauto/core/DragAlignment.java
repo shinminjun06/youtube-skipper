@@ -160,6 +160,13 @@ public final class DragAlignment {
     public static Origin locatePickedAfterRetry(Game.Image im,Game.Image before,
             Game.Image previous,Game.Frame frame,Game.Shape shape,
             float fingerX,float fingerY,float retryDX,float retryDY) {
+        Motion motion=locatePickedAfterRetryEvidence(im,before,previous,frame,shape,
+            fingerX,fingerY,retryDX,retryDY);
+        return motion==null?null:motion.latest;
+    }
+    public static Motion locatePickedAfterRetryEvidence(Game.Image im,Game.Image before,
+            Game.Image previous,Game.Frame frame,Game.Shape shape,
+            float fingerX,float fingerY,float retryDX,float retryDY) {
         if(im==null||previous==null||before==null||frame==null||shape==null ||
            im.width!=previous.width||im.height!=previous.height ||
            im.width!=before.width||im.height!=before.height ||
@@ -182,7 +189,7 @@ public final class DragAlignment {
         if(Math.abs(mx-retryDX)>cell*.58f ||
            Math.abs(my-retryDY)>cell*.58f)return null;
         if(retryDX*mx+retryDY*my < command*command*.55f)return null;
-        return n;
+        return new Motion(n,mx,my);
     }
 
     private static List<Origin> stagedCandidates(Game.Image im,Game.Image before,Game.Frame frame,Game.Shape shape,float fingerX,float fingerY) {
