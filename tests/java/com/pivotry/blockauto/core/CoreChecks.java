@@ -750,7 +750,103 @@ public final class CoreChecks {
             "extra same-shape red sprite must cause rejection");
     }
 
-    public static void main(String[] args) throws Exception {        thumbnailOverlapPickedMotionRegression();
+    /** Confidence-gated online learning must never extrapolate unverified
+     * or inconsistent touch offsets.  Coordinates are *pixel* origins and
+     * finger positions as in the real 720x1560 game fixture.
+     */
+    static void verifiedDragCalibrationRegression() {
+        DragCalibration model=new DragCalibration();
+        Game.Piece box=new Game.Piece(0,0,1,0,0,1,1,1);
+        float cell=80f;
+        check(model.predict(0,box,cell,360,525,720,1560)==null,
+            "untrained drag cannot use unverified direct placement");
+        // Shape-normalized model bias: fingerX = spriteX + width*.5 cell
+        // + .16 cell; fingerY = spriteY + height*.5 cell + 3.1 cell.
+        DragCalibration.Observation s1=new DragCalibration.Observation(
+            0,2,2,cell,350+1.16f*cell,500+4.1f*cell,350,500);
+        DragCalibration.Observation s2=new DragCalibration.Observation(
+            0,2,2,cell,220+1.20f*cell,340+4.05f*cell,220,340);
+        check(model.recordVerified(s1),"first independently verified placement accepted");
+        check(model.confidence(0)==1,"one success is insufficient for fast path");
+        check(model.predict(0,box,cell,360,525,720,1560)==null,
+            "fast mode requires two agreeing successful releases");
+        check(model.recordVerified(s2),"agreeing second verified success accepted");
+        float[] predicted=model.predict(0,box,cell,360,525,720,1560);
+        check(predicted!=null,"two agreeing verified releases enable predicted drag");
+        check(Math.abs(predicted[0]-(360+1.18f*cell))<2f &&
+              Math.abs(predicted[1]-(525+4.075f*cell))<2f,
+            "finger target predicted from learned screen-normalized lift");
+        check(model.predict(1,box,cell,360,525,720,1560)==null,
+            "slot 1 may not copy slot 0 calibration");
+        Game.Piece one=new Game.Piece(0,0);
+        float[] onePredicted=model.predict(0,one,cell,360,525,720,1560);
+        check(onePredicted!=null&&Math.abs(onePredicted[0]-(360+.68f*cell))<2f,
+            "different shape dimensions normalize around sprite midpoint");
+        check(model.predict(0,box,cell,360,1320,720,1560)==null,
+            "offscreen learned finger position must fall back to staged drag");
+        check(model.predict(0,box,cell,360,525,1440,3120)==null,
+            "cell geometry changes must invalidate stale calibration");
+        check(!model.recordVerified(new DragCalibration.Observation(
+            0,2,2,cell,Float.NaN,800,350,500)),
+            "NaN motion sample cannot poison calibration");
+        check(model.confidence(0)==2,"malformed sample does not erase valid model");
+        check(model.recordVerified(new DragCalibration.Observation(
+            0,2,2,cell,350+3*cell,500+4.1f*cell,350,500)),
+            "outlying but finite sample causes controlled relearning");
+        check(model.confidence(0)==1 &&
+              model.predict(0,box,cell,360,525,720,1560)==null,
+            "disagreeing slot offset disables direct drag until reconfirmed");
+        model.reset();
+        check(model.confirmedSamples()==0&&model.confidence(0)==0,
+            "session reset forgets device-specific calibration");
+    }
+
+    static int simulateCorrection(float cells,float responseGain,boolean adaptive) {
+        float cell=80f,error=cells*cell;
+        int steps=0;
+        for(;steps<16;steps++) {
+            if(Math.abs(error)<cell*.13f)return steps;
+            float command=adaptive?DragCalibration.correction(error,cell):
+                DragStep.axis(error,cell);
+            error-=command*responseGain;
+        }
+        return steps;
+    }
+
+    /** Deterministic offline SERVO simulation: not a measured game success
+     * rate. Compare ONLY gesture counts across touch/render response gains.
+     */
+    static void adaptiveServoComparison() {
+        double oldTotal=0,newTotal=0;
+        int count=0;
+        for(float gain:new float[]{.75f,1f,1.25f,1.5f})
+            for(int index=-30;index<=30;index++) {
+                float cells=index*.25f;
+                int old=simulateCorrection(cells,gain,false);
+                int improved=simulateCorrection(cells,gain,true);
+                check(old<16&&improved<16,
+                    "bounded adaptive servo converges under modeled gain "+gain);
+                oldTotal+=old;newTotal+=improved;count++;
+            }
+        double saved=(oldTotal-newTotal)/oldTotal;
+        check(saved>.17,"new modeled servo should save >17% correction strokes");
+        check(Math.abs(DragCalibration.correction(1000,80))<=240.01f &&
+              Math.abs(DragCalibration.correction(-1000,80))<=240.01f,
+            "single open-loop correction never exceeds three cell widths");
+        check(Math.abs(DragCalibration.correction(12,80)-8.64f)<.02f,
+            "near target avoids blindly running full speed");
+        boolean thrown=false;
+        try{DragCalibration.correction(Float.NaN,80);}
+        catch(IllegalArgumentException expected){thrown=true;}
+        check(thrown,"invalid visual servo parameters cannot emit a bad touch");
+        System.out.printf(java.util.Locale.US,
+            "MODELED servo: %.1f%% fewer corrective strokes (%d scenarios, old=%.0f, new=%.0f)%n",
+            saved*100,count,oldTotal,newTotal);
+    }
+
+    public static void main(String[] args) throws Exception {        verifiedDragCalibrationRegression();
+        adaptiveServoComparison();
+        thumbnailOverlapPickedMotionRegression();
         verticalFiveBottomOverlayRegression();
         rightOfFingerPickupRegression();
         statusOverlayOcclusionRegression();
