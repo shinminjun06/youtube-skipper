@@ -351,10 +351,23 @@ class CaptureService : Service() {
         val targetMatch=if(phase==Phase.ALIGN)
             DragAlignment.locateNear(image,beforeImage!!,frame,shape,targetX,targetY)
             else null
-        val found=if(phase==Phase.PICKED)
+        // The first pickup test remains strictly direction-checked.
+        // On its SINGLE reverse retry, an animation may still display the
+        // preceding +X gesture while the latest command was -X. Only then
+        // permit full-shape temporal tracking, and NEVER release based on it.
+        val directed=if(phase==Phase.PICKED)
             DragAlignment.locateMoving(image,beforeImage!!,probeImage!!,frame,shape,
                 fingerX,fingerY,probeDX,probeDY)
+            else null
+        val retryRecovery=if(phase==Phase.PICKED && directed==null && corrections==1)
+            DragAlignment.locatePickedAfterRetry(image,beforeImage!!,probeImage!!,
+                frame,shape,fingerX,fingerY,probeDX,probeDY)
+            else null
+        val found=if(phase==Phase.PICKED) directed ?: retryRecovery
             else targetMatch ?: DragAlignment.locate(image,beforeImage!!,frame,shape,fingerX,fingerY)
+        if(retryRecovery!=null)
+            android.util.Log.i("BlockBlastAuto","reverse pickup probe had delayed sprite motion; "+
+                "unique complete shape at "+retryRecovery.x+","+retryRecovery.y)
         if (!valid(epoch)) return
         if (found == null) {
             observed = null
@@ -453,6 +466,13 @@ class CaptureService : Service() {
             .put("fingerX",fingerX).put("fingerY",fingerY).put("probeDX",probeDX).put("probeDY",probeDY).put("targetX",targetX).put("targetY",targetY)
             .put("observedOriginX",observed?.x ?: JSONObject.NULL)
             .put("observedOriginY",observed?.y ?: JSONObject.NULL)
+            .put("pickupRetry",phase==Phase.PICKED && corrections==1)
+            .put("visibleMovingShapeX",if(phase==Phase.PICKED && probeImage!=null)
+                DragAlignment.locatePickedAfterRetry(image,original,probeImage!!,
+                    frame,shape,fingerX,fingerY,probeDX,probeDY)?.x ?: JSONObject.NULL else JSONObject.NULL)
+            .put("visibleMovingShapeY",if(phase==Phase.PICKED && probeImage!=null)
+                DragAlignment.locatePickedAfterRetry(image,original,probeImage!!,
+                    frame,shape,fingerX,fingerY,probeDX,probeDY)?.y ?: JSONObject.NULL else JSONObject.NULL)
             .put("targetCellPreview",DragAlignment.targetCellPreview(image,original,frame,shape,
                 kotlin.math.round((targetX-frame.left)/frame.cell).toInt(),
                 kotlin.math.round((targetY-frame.top)/frame.cell).toInt()))
