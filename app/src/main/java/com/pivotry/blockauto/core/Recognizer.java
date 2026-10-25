@@ -91,13 +91,29 @@ public final class Recognizer {
     }
     /** Compatibility entry point: only fully read frames may reach planning. */
     public static Game.Frame read(Game.Image im) { return analyze(im).frame; }
-    public static Detection analyze(Game.Image im) {
+    public static Detection analyze(Game.Image im) { return analyze(im,null); }
+    /**
+     * Reuse a previous fully verified grid only if the 8x8 inner lines
+     * and top/bottom borders still pass the ordinary strict gridScore.
+     * Cells and tray pieces are NEVER cached. An invalid hint falls back.
+     */
+    public static Detection analyze(Game.Image im,Game.Frame hint) {
         if(im.width<300 || im.height<im.width*1.15f) return failure(Issue.FORMAT,"PORTRAIT_SIZE",-1,-1,-1);
         boolean black=true;
         for(int y=0;y<8;y++)for(int x=0;x<8;x++)if(hi(im.at((x+.5f)*im.width/8,(y+.5f)*im.height/8))>8)black=false;
         if(black)return failure(Issue.BLACK_FRAME,"NO_VISIBLE_CONTENT",-1,-1,-1);
         int step=Math.max(2,im.width/350);
         float best=5,l=0,t=0,p=0;
+        if(hint!=null && hint.width==im.width && hint.height==im.height &&
+           Float.isFinite(hint.left) && Float.isFinite(hint.top) && Float.isFinite(hint.cell) &&
+           hint.left>=0f && hint.top>=0f && hint.cell>0f &&
+           hint.left+8f*hint.cell<=im.width && hint.top+8f*hint.cell<im.height*.82f) {
+            float cachedScore=gridScore(im,hint.left,hint.top,hint.cell);
+            if(cachedScore>5f) {
+                best=cachedScore;l=hint.left;t=hint.top;p=hint.cell;
+            }
+        }
+        if(p==0) {
         for(int y=(int)(im.height*.13f);y<im.height*.56f;y+=step) {
             for(int threshold:new int[]{30,45,65,85,105,125,145,165,185,210}) {
                 int start=-1;
@@ -113,6 +129,7 @@ public final class Recognizer {
                     }
                 }
             }
+        }
         }
         if(p==0)return failure(Issue.GRID,"NO_8X8_GRID",-1,-1,-1);
         // Empty cells have the same interior material at center and all four

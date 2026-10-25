@@ -1,4 +1,4 @@
-# Block Blast Advisor + Auto v1.4.3
+# Block Blast Advisor + Auto v1.4.4
 
 Android 11+ 전용 오프라인 Block Blast Classic 게임판 분석 앱입니다. **추천 모드**와 **자동 플레이 모드**를 같은 앱에서 선택할 수 있습니다.
 
@@ -10,12 +10,20 @@ Android 11+ 전용 오프라인 Block Blast Classic 게임판 분석 앱입니�
 
 ## 사용법
 
-1. [오토플레이 전용 빌드 페이지](https://github.com/shinminjun06/youtube-skipper/actions?query=branch%3Ablockblast-autoplay-build)에서 **Build BlockBlast Advisor + Auto APK**가 초록 체크로 완료된 실행을 열고 **BlockBlastAutoPlay-apk** ZIP을 다운로드합니다. ZIP을 풀고 **BlockBlastAutoPlay-v1.4.3.apk**를 설치하세요. 구버전과 혼동하지 마세요.
-2. 홈 화면에서 **Block Blast AutoPlay** 아이콘을 실행해 **v1.4.3**이라고 표시되는지 확인합니다. 기존 **Block Blast Advisor**(v1.2)는 다른 앱으로 남아 있습니다. 기존 Advisor의 접근성 서비스를 끄고 **Block Blast AutoPlay** 접근성을 연결한 다음 **전체 화면 공유 시작**을 승인합니다.
+1. [오토플레이 전용 빌드 페이지](https://github.com/shinminjun06/youtube-skipper/actions?query=branch%3Ablockblast-autoplay-build)에서 **Build BlockBlast Advisor + Auto APK**가 초록 체크로 완료된 실행을 열고 **BlockBlastAutoPlay-apk** ZIP을 다운로드합니다. ZIP을 풀고 **BlockBlastAutoPlay-v1.4.4.apk**를 설치하세요. 구버전과 혼동하지 마세요.
+2. 홈 화면에서 **Block Blast AutoPlay** 아이콘을 실행해 **v1.4.4**이라고 표시되는지 확인합니다. 기존 **Block Blast Advisor**(v1.2)는 다른 앱으로 남아 있습니다. 기존 Advisor의 접근성 서비스를 끄고 **Block Blast AutoPlay** 접근성을 연결한 다음 **전체 화면 공유 시작**을 승인합니다.
 3. 앱 첫 화면에서 **자동 플레이 모드 선택**을 누른 뒤 Block Blast Classic의 세로 화면을 엽니다. 자동 모드에서는 하단에 고정되는 플로팅 창에서도 **모드: 추천** 또는 **모드: 자동**을 전환할 수 있습니다.
 4. **▶ 시작**을 누릅니다. 추천에서는 초록색 칸을 보고 수동으로 놓습니다. 자동에서는 플로팅 창이 사라지고, 앱이 블록을 잡고 설치를 검증합니다. 조작창이 숨겨져 있는 것은 정상입니다.
 5. **자동 플레이 중에는** Android 알림 패널의 **종료** 버튼으로 즉시 중지하세요. 중지되면 플로팅 창이 다시 나타납니다. 추천 모드에서는 기존 ■ 중지 버튼을 이용할 수 있습니다.
 6. 추적 실패 시 앱의 **위치 측정 실패 진단 파일 저장**을 이용해 원인 분석용 ZIP을 저장할 수 있습니다.
+
+## v1.4.4 — 안전하게 게임판 격자 재탐색 줄이기
+
+- **기존 1.4.3 자동 드래그 안전장치 유지**: 정확한 모양/손패 슬롯별 학습, 화면 가장자리 직접 이동 제한, 실제 블록 전체 추적, 놓기 전 위치 및 놓은 후 보드 검증, BASE/QUICK/FAST 속도 단계는 그대로 둡니다.
+- **격자 좌표 재사용**: 직전 정식 인식 프레임의 left/top/cell 값으로 8×8 선과 상하 경계를 다시 검사합니다. 기존 `gridScore` 기준을 통과하면 매 프레임 큰 화면 영역에서 게임판 위치를 다시 찾는 과정을 생략합니다. 점수 기준을 통과하지 못하거나 화면 크기가 바뀌면 기존 전체 탐색으로 돌아갑니다.
+- **블록 상태는 캐시하지 않음**: 게임판 64칸 점유와 현재 손패 모양은 언제나 새 화면에서 다시 인식하므로, 다음 블록을 놓거나 줄이 제거된 상황을 이전 데이터로 조작하지 않습니다.
+- 화면 테마별 스크린샷, 손패 변경, 잘못된 힌트 좌표, 검은 캡처를 검증하는 회귀 테스트를 추가했습니다.
+- 기기별 속도/CPU 개선폭은 **실기기에서 아직 측정하지 않았습니다**. CI 성공은 무중단 자동 배치 성공을 의미하지 않습니다.
 
 ## v1.4.3 — 속도 향상, 기존 안전 검증 유지
 

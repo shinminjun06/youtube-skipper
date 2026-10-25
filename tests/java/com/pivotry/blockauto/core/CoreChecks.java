@@ -250,6 +250,40 @@ public final class CoreChecks {
         check(Recognizer.read(new Game.Image(709,1536,new int[709*1536]))==null,
             "black/locked/unrelated screen rejected");
     }
+    static void cachedGridRecognitionRegression() throws Exception {
+        // Fast geometry reuse must never make old blocks/board actionable.
+        for(String name:new String[]{"empty-gold.png","diagonal-gold.png","purple-gold-frames.png"}) {
+            Game.Image image=load(name);
+            Recognizer.Detection cold=Recognizer.analyze(image);
+            check(cold.frame!=null,"cold grid for "+name);
+            Recognizer.Detection cached=Recognizer.analyze(image,cold.frame);
+            check(cached.frame!=null,"cached grid for "+name);
+            check(cached.frame.signature().equals(cold.frame.signature()),
+                "hint preserves exact board and tray "+name);
+            check(Math.abs(cached.frame.left-cold.frame.left)<.01f &&
+                Math.abs(cached.frame.top-cold.frame.top)<.01f &&
+                Math.abs(cached.frame.cell-cold.frame.cell)<.01f,
+                "cached geometry matches cold detection "+name);
+        }
+        Game.Image first=load("empty-gold.png");
+        Game.Frame reference=Recognizer.analyze(first).frame;
+        Game.Image changed=load("diagonal-gold.png");
+        Recognizer.Detection refreshed=Recognizer.analyze(changed,reference);
+        Recognizer.Detection cold=Recognizer.analyze(changed);
+        check(refreshed.frame!=null && cold.frame!=null &&
+            refreshed.frame.signature().equals(cold.frame.signature()),
+            "changed hand must be re-read while reusing grid");
+        Game.Frame invalid=new Game.Frame(reference.board,reference.shapes,
+            0f,0f,reference.cell,reference.width,reference.height,reference.confidence);
+        Recognizer.Detection fallback=Recognizer.analyze(first,invalid);
+        check(fallback.frame!=null && fallback.frame.signature().equals(reference.signature()) &&
+            Math.abs(fallback.frame.left-reference.left)<.01f,
+            "bad geometry must trigger complete grid discovery");
+        Game.Image black=new Game.Image(first.width,first.height,new int[first.pixels.length]);
+        check(Recognizer.analyze(black,reference).issue==Recognizer.Issue.BLACK_FRAME,
+            "blank capture cannot become a valid frame through stale hint");
+    }
+
     static void diagnostics() throws Exception {
         Game.Image original=load("empty-gold.png");
         Recognizer.Detection valid=Recognizer.analyze(original);
@@ -1123,6 +1157,7 @@ public final class CoreChecks {
     }
 
     public static void main(String[] args) throws Exception {
+        cachedGridRecognitionRegression();
         diagnostic9ExactShapeAndEdgeRegression();        successGatedSpeedRegression();
         measuredSpriteResponseRegression();
 

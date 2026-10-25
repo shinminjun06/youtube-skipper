@@ -50,6 +50,8 @@ class CaptureService : Service() {
     private var phase = Phase.IDLE
     private var inFlight = false
     private var cached: Game.Image? = null
+    // Worker-only cache: ONLY grid geometry, not occupancy or tray contents.
+    private var geometryHint: Game.Frame? = null
     private var timestamp = Long.MIN_VALUE
     private var actionFloor = Long.MIN_VALUE
     private var nextReadAt = 0L
@@ -159,6 +161,7 @@ class CaptureService : Service() {
             if (!valid(epoch)) return@post
             phase = Phase.IDLE; inFlight = false; beforeImage = null; probeImage = null; before = null; verifier = null; failureTrace = null
             stableSignature = ""; lastRecommendedSignature=""; observed = null; retries = 0; retrySignature = ""; noForegroundSince = 0L
+            geometryHint=null
             scoreTracker.reset()
             dragCalibration.reset()
             dragResponse.reset()
@@ -241,8 +244,12 @@ class CaptureService : Service() {
         // Measure the held object instead of re-running static board recognition.
         if (phase == Phase.PICKED || phase == Phase.ALIGN) { align(image,now,epoch); return }
 
-        val detection = Recognizer.analyze(image)
+        val detection = Recognizer.analyze(image,geometryHint)
         val frame = detection.frame
+        if(frame!=null) geometryHint=frame
+        else if(detection.issue==Recognizer.Issue.GRID ||
+                detection.issue==Recognizer.Issue.FORMAT ||
+                detection.issue==Recognizer.Issue.BLACK_FRAME) geometryHint=null
         if (!valid(epoch)) return
         if(frame!=null){boardTop=frame.top;boardCell=frame.cell}
         if (frame == null) {
