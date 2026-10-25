@@ -62,11 +62,19 @@ public final class DragAlignment {
         float secondError=Float.MAX_VALUE;
         for(Origin n:now) for(Origin o:old) {
             float movedX=n.x-o.x,movedY=n.y-o.y;
-            float tolerance=frame.cell*.34f;
+            // Actual Android Classic drag renders in board-cell increments:
+            // the captured incident moved ~78 px on a commanded ~52 px probe
+            // (cell ~80 px). Quantization and a biased render-frame sample may
+            // exceed the old .34-cell tolerance even though the *five* newly
+            // rendered cells move together. Allow up to .58 cell error, but
+            // still require strong same-direction motion of the whole shape.
+            float tolerance=frame.cell*.58f;
             if(Math.abs(movedX-dx)>tolerance||Math.abs(movedY-dy)>tolerance)continue;
-            // Require a substantial motion in the commanded direction; a
-            // stationary tray piece or static board preview is never accepted.
-            if(dx*movedX+dy*movedY < (dx*dx+dy*dy)*.48f)continue;
+            float command=(float)Math.hypot(dx,dy);
+            float moved=(float)Math.hypot(movedX,movedY);
+            if(command<frame.cell*.2f||moved<frame.cell*.35f ||
+               moved>command+frame.cell*.58f)continue;
+            if(dx*movedX+dy*movedY < (dx*dx+dy*dy)*.55f)continue;
             float error=(movedX-dx)*(movedX-dx)+(movedY-dy)*(movedY-dy);
             if(error<bestError) {
                 secondError=bestError;
