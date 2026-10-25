@@ -98,6 +98,7 @@ class CaptureService : Service() {
     private var lastBoardOverlapShape: String? = null
     private var usedComboClearPreview = false
     private var usedLineGlowPreview = false
+    private var usedDiagonalLineClearPreview = false
     private var usedBevelZigzagRecovery = false
     private var lastServoFailureDetail: String? = null
     private var lastCorrectionOrigin: DragAlignment.Origin? = null
@@ -191,6 +192,7 @@ class CaptureService : Service() {
             lastBoardOverlapShape=null
             usedComboClearPreview=false
             usedLineGlowPreview=false
+            usedDiagonalLineClearPreview=false
             usedBevelZigzagRecovery=false
             pendingDragSample=null
             directDragUsed=false; directDragCount=0; stagedDragCount=0
@@ -398,6 +400,7 @@ class CaptureService : Service() {
         lastBoardOverlapShape=null
         usedComboClearPreview=false
         usedLineGlowPreview=false
+        usedDiagonalLineClearPreview=false
         usedBevelZigzagRecovery=false
         dragResponse.reset();lastCorrectionOrigin=null
         probeDX = 0f; probeDY = 0f; selected = shape
@@ -601,6 +604,17 @@ class CaptureService : Service() {
             DragAlignment.locateLineGlowRightL(image,beforeImage!!,frame,
                 shape,targetX,targetY,fingerX,fingerY)
             else null
+        // Diagnostic (18): a two-square BLUE diagonal completes one row.
+        // The row-clear glow wipes out strict held-sprite edges. This highly
+        // constrained target preview is release-only, never motor calibration.
+        val diagonalLineClearPreview=if(phase==Phase.ALIGN &&
+                targetMatch==null && stackedPreview==null &&
+                regularHeld==null && occupiedBoardRecovery==null &&
+                comboClearPreview==null && lineGlowPreview==null &&
+                !directDragUsed && corrections>=1 && dragResponse.measured())
+            DragAlignment.locateDiagonalLineClearPreview(image,beforeImage!!,
+                frame,shape,targetX,targetY,fingerX,fingerY)
+            else null
         // Diagnostic (16): orange four-cell zigzag may be fully visible
         // with dark bevel centers that fail the normal strict-color tracker.
         // Pixel-gradient and temporal novelty are separately checked.
@@ -608,14 +622,16 @@ class CaptureService : Service() {
         val bevelZigzagRecovery=if(phase==Phase.ALIGN && targetMatch==null &&
                 stackedPreview==null && regularHeld==null &&
                 occupiedBoardRecovery==null && comboClearPreview==null &&
-                lineGlowPreview==null && !directDragUsed && corrections>=1 &&
+                lineGlowPreview==null && diagonalLineClearPreview==null &&
+                !directDragUsed && corrections>=1 &&
                 dragResponse.measured())
             DragAlignment.locateBeveledOrangeZigzag(image,beforeImage!!,
                 frame,shape,fingerX,fingerY)
             else null
         val found=if(phase==Phase.PICKED) pickupMotion?.latest
             else targetMatch ?: stackedPreview ?: regularHeld ?: occupiedBoardRecovery
-                ?: comboClearPreview ?: lineGlowPreview ?: bevelZigzagRecovery
+                ?: comboClearPreview ?: lineGlowPreview ?: diagonalLineClearPreview
+                ?: bevelZigzagRecovery
         if(bevelZigzagRecovery!=null) {
             usedBevelZigzagRecovery=true
             lastCorrectionOrigin=null
@@ -623,6 +639,13 @@ class CaptureService : Service() {
             android.util.Log.i("BlockBlastAuto",
                 "BEVEL_ZIGZAG_RECOVERY correction-only at "+
                 bevelZigzagRecovery.x+","+bevelZigzagRecovery.y)
+        }
+        if(diagonalLineClearPreview!=null) {
+            usedDiagonalLineClearPreview=true
+            lastCorrectionOrigin=null // snapped preview is NOT sprite motion
+            pace.uncertainty()
+            android.util.Log.i("BlockBlastAuto",
+                "DIAGONAL_LINE_CLEAR strict target preview confirmed; no motor calibration")
         }
         if(lineGlowPreview!=null) {
             usedLineGlowPreview=true
@@ -733,7 +756,9 @@ class CaptureService : Service() {
         val targetColumn=kotlin.math.round((targetX-frame.left)/frame.cell).toInt()
         val targetRow=kotlin.math.round((targetY-frame.top)/frame.cell).toInt()
         val targetCellsMatch=phase==Phase.ALIGN && (targetMatch!=null ||
-            stackedPreview!=null || comboClearPreview!=null || lineGlowPreview!=null) &&
+            stackedPreview!=null || comboClearPreview!=null || lineGlowPreview!=null ||
+                     diagonalLineClearPreview!=null ||
+             diagonalLineClearPreview!=null) &&
             (lineGlowPreview!=null || DragAlignment.targetCellPreview(image,beforeImage!!,frame,shape,targetColumn,targetRow))
         val snappedToTarget=targetCellsMatch && abs(dx)<frame.cell*.32f &&
             abs(dy)<frame.cell*.32f
@@ -836,6 +861,7 @@ class CaptureService : Service() {
             .put("lastCorrectionTrusted",lastCorrectionTrusted)
             .put("usedComboClearPreview",usedComboClearPreview)
             .put("usedLineGlowPreview",usedLineGlowPreview)
+            .put("usedDiagonalLineClearPreview",usedDiagonalLineClearPreview)
             .put("usedBevelZigzagRecovery",usedBevelZigzagRecovery)
             .put("pickupRetry",phase==Phase.PICKED && corrections==1)
             .put("calibratedDirectStart",directDragUsed)
