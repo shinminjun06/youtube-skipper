@@ -387,6 +387,39 @@ public final class CoreChecks {
         Game.Image twoMoving=lifted(moving,gf,ell,241+delta,gf.top+gf.cell);
         check(DragAlignment.locateMoving(twoMoving,gold,two,gf,ell,350+delta,1320,delta,0)==null,"two equally moving candidates remain ambiguous");
     }
+    /** Regression from uploaded v1.3.1 ZIP metadata:
+     * ALIGN, NO_HELD_MATCH, 2x2 purple, goal near (440,524), actual held
+     * near (523,273), upper ~16.7% of the tile sampling behind our HUD.
+     * Use a synthetic frame, never commit the user's private screenshot.
+     */
+    static void alignRecoveryBehindOverlay() throws Exception {
+        Game.Image baseline=load("empty-gold.png");
+        Game.Frame board=Recognizer.read(baseline);
+        check(board!=null,"real board geometry for occlusion recovery");
+        Game.Piece square=new Game.Piece(0,0,1,0,0,1,1,1);
+        Game.Shape selected=new Game.Shape(2,square,550,1174,0xff8451d6);
+        float heldX=523,heldY=273,fingerX=573,fingerY=733;
+        Game.Image moved=lifted(baseline,board,selected,heldX,heldY);
+        // Simulate the movable HUD in front of the top 22%-40% sampling
+        // strip, but never over any of the four occupied center pixels.
+        int[] painted=moved.pixels.clone();
+        for(int y=273;y<=304;y++)
+            for(int x=523;x<=Math.min(669,523+2*(int)board.cell);x++)
+                painted[y*moved.width+x]=0xff24293d;
+        Game.Image occluded=new Game.Image(moved.width,moved.height,painted);
+        float targetX=board.left+5*board.cell,targetY=board.top+2*board.cell;
+        check(DragAlignment.locateNear(occluded,baseline,board,selected,targetX,targetY)==null,
+            "strict local target check must reject an off-board, HUD-obscured held object");
+        DragAlignment.Origin recovered=DragAlignment.locate(
+            occluded,baseline,board,selected,fingerX,fingerY);
+        check(recovered!=null,
+            "newly rendered block with every changed center and 83% visible color must be recovered");
+        check(Math.abs(recovered.x-heldX)<board.cell*.15f &&
+              Math.abs(recovered.y-heldY)<board.cell*.15f,
+            "HUD-aware re-acquisition returns actual held origin, not target or old tray");
+        check(DragAlignment.locate(baseline,baseline,board,selected,fingerX,fingerY)==null,
+            "occlusion allowance cannot reinterpret an unpicked stationary block as a held object");
+    }
     static void diagnosticArchive() throws Exception {
         Game.Image before=new Game.Image(2,1,new int[]{0xffff0000,0xff00ff00});
         Game.Image held=new Game.Image(2,1,new int[]{0xff0000ff,0xffffffff});
@@ -509,6 +542,7 @@ public final class CoreChecks {
         check(inferred.combo()==101,"failed OCR does not reset known chain");
     }
     public static void main(String[] args) throws Exception {
+        alignRecoveryBehindOverlay();
         comboCaptionDetection();
         highScorePlanning();
         guideOverlaySanitization();
