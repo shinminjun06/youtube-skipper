@@ -90,6 +90,7 @@ class CaptureService : Service() {
     private var usedBoardOverlapRecovery = false
     private var usedComboClearPreview = false
     private var usedLineGlowPreview = false
+    private var usedBevelZigzagRecovery = false
     private var lastServoFailureDetail: String? = null
     private var lastCorrectionOrigin: DragAlignment.Origin? = null
     private var lastCorrectionStepX=0f
@@ -178,6 +179,7 @@ class CaptureService : Service() {
             usedBoardOverlapRecovery=false
             usedComboClearPreview=false
             usedLineGlowPreview=false
+            usedBevelZigzagRecovery=false
             pendingDragSample=null
             directDragUsed=false; directDragCount=0; stagedDragCount=0
             verifiedDirectCount=0; verifiedStagedCount=0
@@ -383,6 +385,7 @@ class CaptureService : Service() {
         usedBoardOverlapRecovery=false
         usedComboClearPreview=false
         usedLineGlowPreview=false
+        usedBevelZigzagRecovery=false
         dragResponse.reset();lastCorrectionOrigin=null
         probeDX = 0f; probeDY = 0f; selected = shape
         verifier = MoveVerifier(frame,move.piece,move.x,move.y)
@@ -544,8 +547,29 @@ class CaptureService : Service() {
             DragAlignment.locateLineGlowRightL(image,beforeImage!!,frame,
                 shape,targetX,targetY,fingerX,fingerY)
             else null
+        // Diagnostic (16): orange four-cell zigzag may be fully visible
+        // with dark bevel centers that fail the normal strict-color tracker.
+        // Pixel-gradient and temporal novelty are separately checked.
+        // This may ONLY steer an already held piece; it cannot release it.
+        val bevelZigzagRecovery=if(phase==Phase.ALIGN && targetMatch==null &&
+                stackedPreview==null && regularHeld==null &&
+                occupiedBoardRecovery==null && comboClearPreview==null &&
+                lineGlowPreview==null && !directDragUsed && corrections>=1 &&
+                dragResponse.measured())
+            DragAlignment.locateBeveledOrangeZigzag(image,beforeImage!!,
+                frame,shape,fingerX,fingerY)
+            else null
         val found=if(phase==Phase.PICKED) pickupMotion?.latest
-            else targetMatch ?: stackedPreview ?: regularHeld ?: occupiedBoardRecovery ?: comboClearPreview ?: lineGlowPreview
+            else targetMatch ?: stackedPreview ?: regularHeld ?: occupiedBoardRecovery
+                ?: comboClearPreview ?: lineGlowPreview ?: bevelZigzagRecovery
+        if(bevelZigzagRecovery!=null) {
+            usedBevelZigzagRecovery=true
+            lastCorrectionOrigin=null
+            pace.uncertainty()
+            android.util.Log.i("BlockBlastAuto",
+                "BEVEL_ZIGZAG_RECOVERY correction-only at "+
+                bevelZigzagRecovery.x+","+bevelZigzagRecovery.y)
+        }
         if(lineGlowPreview!=null) {
             usedLineGlowPreview=true
             lastCorrectionOrigin=null
@@ -664,7 +688,8 @@ class CaptureService : Service() {
             // A stacked-preview proxy is NOT the genuine moving sprite
             // coordinate, so it must NEVER update finger-to-sprite calibration.
             if(stackedPreview!=null || usedBoardOverlapRecovery ||
-                    comboClearPreview!=null || lineGlowPreview!=null) {
+                    comboClearPreview!=null || lineGlowPreview!=null ||
+                    usedBevelZigzagRecovery) {
                 pendingDragSample=null
                 pace.uncertainty()
                 android.util.Log.i("BlockBlastAuto",
@@ -749,6 +774,7 @@ class CaptureService : Service() {
             .put("usedBoardOverlapRecovery",usedBoardOverlapRecovery)
             .put("usedComboClearPreview",usedComboClearPreview)
             .put("usedLineGlowPreview",usedLineGlowPreview)
+            .put("usedBevelZigzagRecovery",usedBevelZigzagRecovery)
             .put("pickupRetry",phase==Phase.PICKED && corrections==1)
             .put("calibratedDirectStart",directDragUsed)
             .put("exactShapeCalibrationConfidence",dragCalibration.confidence(shape.slot,shape.piece.key))

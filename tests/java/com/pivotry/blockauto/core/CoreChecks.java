@@ -1072,6 +1072,68 @@ public final class CoreChecks {
      */
 
 
+
+    static void diagnostic16OrangeDarkBevelRegression() {
+        // Actual diag16 parameters: 720x1560, 79.625 cell, target
+        // (42,766.125), finger (176.8625,1114.5804), moved orange
+        // 2x3 zigzag visibly around x~145-160/y~810. The source tray's
+        // orange face was (230,121,33), moving centers (156,69,8).
+        int w=720,h=1560,bg=0xff212d52;
+        float cell=79.625f,left=42f,top=368f;
+        long board=0xfc00ee8900000001L;
+        Game.Piece zigzag=new Game.Piece(0,0,0,1,1,1,1,2);
+        Game.Shape picked=new Game.Shape(0,zigzag,131.5f,1192f,0xffe67921);
+        Game.Frame frame=new Game.Frame(board,java.util.Arrays.asList(picked),
+            left,top,cell,w,h,1f);
+        int[] base=new int[w*h];java.util.Arrays.fill(base,bg);
+        for(int r=0;r<8;r++)for(int c=0;c<8;c++)
+            if((board&(1L<<(8*r+c)))!=0)
+                paintCell(base,w,h,left,top,cell,c,r,0xffea933d);
+        Game.Image before=new Game.Image(w,h,base);
+        int[] pix=base.clone();
+        float ox=153f,oy=812f;
+        for(int i=0;i<4;i++) {
+            float x0=ox+zigzag.xs[i]*cell,y0=oy+zigzag.ys[i]*cell;
+            for(int y=(int)y0;y<y0+cell;y++)
+                for(int x=(int)x0;x<x0+cell;x++) {
+                    if(x<0||y<0||x>=w||y>=h)continue;
+                    pix[y*w+x]=y<y0+cell*.42f?0xffe67921:0xff9c4508;
+                }
+        }
+        Game.Image moving=new Game.Image(w,h,pix);
+        DragAlignment.Origin recovered=DragAlignment.locateBeveledOrangeZigzag(
+            moving,before,frame,picked,176.8625f,1114.5804f);
+        check(recovered!=null && Math.abs(recovered.x-ox)<cell*.40f &&
+              Math.abs(recovered.y-oy)<cell*.22f,
+            "dark beveled actual zigzag recovered without strict-color centers");
+        check(DragAlignment.locateBeveledOrangeZigzag(
+            before,before,frame,picked,176.8625f,1114.5804f)==null,
+            "unchanged board and source thumbnail are not moving pieces");
+        int[] missing=pix.clone();
+        for(int y=(int)(oy+2*cell);y<oy+3*cell;y++)
+            for(int x=(int)(ox+cell);x<ox+2*cell;x++)
+                if(x>=0&&x<w&&y>=0&&y<h)missing[y*w+x]=bg;
+        check(DragAlignment.locateBeveledOrangeZigzag(
+            new Game.Image(w,h,missing),before,frame,
+            picked,176.8625f,1114.5804f)==null,
+            "missing fourth cell may not be accepted as held zigzag");
+        check(DragAlignment.locateBeveledOrangeZigzag(
+            moving,before,frame,picked,610f,1114.5804f)==null,
+            "unrelated distant finger position may not recover sprite");
+        Game.Piece other=new Game.Piece(0,0,1,0,0,1,1,1);
+        check(DragAlignment.locateBeveledOrangeZigzag(
+            moving,before,frame,new Game.Shape(0,other,131f,1192f,picked.color),
+            176.8625f,1114.5804f)==null,
+            "wrong shape cannot borrow dark-orange zigzag tracking");
+        int[] uniform=base.clone();
+        for(int c=1;c<6;c++)
+            paintCell(uniform,w,h,left,top,cell,c,7,0xffe67921);
+        check(DragAlignment.locateBeveledOrangeZigzag(
+            new Game.Image(w,h,uniform),before,frame,picked,
+            176.8625f,1114.5804f)==null,
+            "static bottom-row orange is not a separately moving zigzag");
+    }
+
     static void diagnostic15BlueLineGlowRegression() {
         int w=720,h=1560,bg=0xff212d52;
         float cell=79.875f,left=41f,top=368f;
@@ -1482,6 +1544,7 @@ public final class CoreChecks {
     }
 
     public static void main(String[] args) throws Exception {
+        diagnostic16OrangeDarkBevelRegression();
         diagnostic15BlueLineGlowRegression();
         diagnostic14ComboGlowRegression();
         diagnostic13OccupiedGreenBoardRegression();

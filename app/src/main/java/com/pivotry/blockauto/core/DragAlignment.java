@@ -158,6 +158,112 @@ public final class DragAlignment {
     }
 
 
+
+    /**
+     * Diagnostic (16): in the enlarged ORANGE stepped four-cell piece the
+     * miniature tray is ~RGB(230,121,33), but the MOVING sprite's dark
+     * beveled center is ~RGB(156,69,8). The normal full-sprite tracker
+     * requires >=78% of tray's brightness at each center and rejects it.
+     *
+     * Only a 2x3 four-square ###-diagonal shape is considered here. Verify
+     * TWO differently shaded pixel depths in BOTH halves of EVERY square,
+     * >=12/16 fresh probes and >=3/4 fresh centers, a unique search cluster,
+     * and a plausible finger-relative position. Static orange board tiles
+     * alone or the original tray thumbnail cannot satisfy the evidence.
+     *
+     * This is an ALIGN correction-only origin, never release authority.
+     * The caller must not train motor gains or placement calibration from it.
+     */
+    public static Origin locateBeveledOrangeZigzag(Game.Image current,
+            Game.Image before,Game.Frame frame,Game.Shape shape,
+            float fingerX,float fingerY) {
+        if(current==null||before==null||frame==null||shape==null ||
+           current.width!=before.width||current.height!=before.height ||
+           !Float.isFinite(fingerX)||!Float.isFinite(fingerY)||
+           !Float.isFinite(frame.cell)||frame.cell<=10f||
+           shape.piece.w!=2||shape.piece.h!=3||
+           shape.piece.xs.length!=4)return null;
+        int mask=0;
+        for(int i=0;i<4;i++)
+            mask|=1<<(shape.piece.ys[i]*2+shape.piece.xs[i]);
+        if(mask!=0b110101)return null; // upper-left, middle both, bottom-right
+        if(!isOrangeBevel(shape.color,shape.color))return null;
+        float cell=frame.cell,step=Math.max(2f,cell*.10f);
+        float minX=Math.max(0,fingerX-4.5f*cell);
+        float maxX=Math.min(current.width-2*cell,fingerX+2f*cell);
+        float minY=Math.max(0,fingerY-8.5f*cell);
+        float maxY=Math.min(current.height-3*cell,fingerY-.45f*cell);
+        if(minX>maxX||minY>maxY)return null;
+        List<float[]> clusters=new ArrayList<>();
+        for(float y=minY;y<=maxY;y+=step)for(float x=minX;x<=maxX;x+=step){
+            float evidence=beveledZigzagEvidence(current,before,frame,shape,x,y);
+            if(evidence<0f)continue;
+            float[] cluster=null;
+            for(float[] entry:clusters)
+                if(Math.abs(entry[0]-x)<cell*.80f &&
+                   Math.abs(entry[1]-y)<cell*.55f) {
+                    cluster=entry;break;
+                }
+            if(cluster==null) {
+                if(clusters.size()>=2)return null; // ambiguous moving shapes
+                clusters.add(new float[]{x,y,x,y,evidence});
+            } else if(evidence>cluster[4]) {
+                cluster[2]=x;cluster[3]=y;cluster[4]=evidence;
+            }
+        }
+        if(clusters.size()!=1)return null;
+        float[] candidate=clusters.get(0);
+        return new Origin(candidate[2],candidate[3],.90f);
+    }
+
+    /** Material and bevel gradient, not just hue or one bright sample. */
+    private static boolean isOrangeBevel(int c,int selected) {
+        int r=Recognizer.r(c),g=Recognizer.g(c),b=Recognizer.b(c);
+        int tr=Recognizer.r(selected),tg=Recognizer.g(selected),
+            tb=Recognizer.b(selected);
+        return tr>tg+55 && tg>tb+35 && tr>175 &&
+               r>=tr*.55f && r>=g*1.30f && g>=b*1.60f &&
+               r-g>=65 && g-b>=30 && Recognizer.isTile(c);
+    }
+
+    private static float beveledZigzagEvidence(Game.Image im,Game.Image before,
+            Game.Frame frame,Game.Shape shape,float x,float y) {
+        float cell=frame.cell;
+        int fresh=0,centersNew=0;
+        for(int i=0;i<shape.piece.xs.length;i++) {
+            int cx=shape.piece.xs[i],cy=shape.piece.ys[i];
+            float px=x+cx*cell,py=y+cy*cell;
+            for(float ox:new float[]{.39f,.61f}) {
+                float xx=px+ox*cell;
+                int top=im.at(xx,py+.22f*cell);
+                int shade=im.at(xx,py+.50f*cell);
+                if(!isOrangeBevel(top,shape.color)||
+                   !isOrangeBevel(shade,shape.color)||
+                   Recognizer.r(top)<Recognizer.r(shape.color)*.70f||
+                   Recognizer.r(top)-Recognizer.r(shade)<22)return -1f;
+                if(Recognizer.distance(top,before.at(xx,py+.22f*cell))>60)fresh++;
+                if(Recognizer.distance(shade,before.at(xx,py+.50f*cell))>60)fresh++;
+            }
+            float mx=px+.5f*cell,my=py+.5f*cell;
+            if(Recognizer.distance(im.at(mx,my),before.at(mx,my))>60)centersNew++;
+        }
+        if(fresh<12||centersNew<3)return -1f;
+        // Reject extra newly colored material just beyond two isolated
+        // exterior sides of the upper-left square. Existing static board
+        // colors are harmless because the novelty comparison rejects them.
+        if(newOrangeOutside(im,before,shape.color,x-.10f*cell,y+.28f*cell) ||
+           newOrangeOutside(im,before,shape.color,x+1.10f*cell,y+.28f*cell))
+            return -1f;
+        return fresh+centersNew*.1f;
+    }
+
+    private static boolean newOrangeOutside(Game.Image now,Game.Image old,int color,
+            float x,float y) {
+        if(x<0||y<0||x>=now.width||y>=now.height)return false;
+        int c=now.at(x,y);
+        return isOrangeBevel(c,color) &&
+               Recognizer.distance(c,old.at(x,y))>60;
+    }
     /**
      * v1.4.9 diagnostic (15), blue 3x2 right-foot L: one completed
      * row glows blue across all eight cells and merges with the lower-right
