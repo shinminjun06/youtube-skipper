@@ -691,7 +691,54 @@ public final class CoreChecks {
             "removing HUD cannot turn a stationary five-cell shape into real movement");
     }
 
-    public static void main(String[] args) throws Exception {        verticalFiveBottomOverlayRegression();
+    /**
+     * User v1.3.6 metadata: red L 4-cell, board at (40,364) size 80.125,
+     * last reverse-probe -52px at finger (364,1285), yet frozen screenshots
+     * show the SAME 4-cell lifted shape moving x=262 -> x=340 (+78px).
+     * This can occur if the visual frame displays a preceding gesture late.
+     *
+     * Never teach the normal move checker to accept opposite direction.
+     * The retry-only recovery proves distinct whole-shape positions, and
+     * final release still requires exact target cells and board verification.
+     */
+    static void delayedRetryVisualMotionRegression() {
+        int width=720,height=1560;
+        float cell=80.125f;
+        int[] pixels=new int[width*height];
+        java.util.Arrays.fill(pixels,0xff385594);
+        Game.Image before=new Game.Image(width,height,pixels);
+        Game.Frame frame=new Game.Frame(0x8080808080007f3fL,
+            java.util.Collections.emptyList(),40,364,cell,width,height,1);
+        Game.Piece redL=new Game.Piece(0,0,1,0,1,1,1,2);
+        Game.Shape held=new Game.Shape(1,redL,377.5f,1192.5f,0xffc53131);
+        Game.Image first=lifted(before,frame,held,262,1034);
+        Game.Image last=lifted(before,frame,held,340,1034);
+        // Opposite direction must remain rejected by the STRICT normal test.
+        check(DragAlignment.locateMoving(last,before,first,frame,held,
+            364.00626f,1285.4375f,-52.08125f,0)==null,
+            "normal directed pickup matcher rejects opposite-direction sprite");
+        DragAlignment.Origin recovered=DragAlignment.locatePickedAfterRetry(
+            last,before,first,frame,held,364.00626f,1285.4375f,-52.08125f,0);
+        check(recovered!=null&&Math.abs(recovered.x-340)<cell*.16f &&
+            Math.abs(recovered.y-1034)<cell*.16f,
+            "single reverse retry can reacquire uniquely moving complete red L");
+        check(DragAlignment.locatePickedAfterRetry(last,before,last,frame,
+            held,364.00626f,1285.4375f,-52.08125f,0)==null,
+            "stalled static red preview cannot be mistaken for a held motion");
+        check(DragAlignment.locatePickedAfterRetry(before,before,first,frame,
+            held,364.00626f,1285.4375f,-52.08125f,0)==null,
+            "vanished red sprite cannot authorize further movement");
+        check(DragAlignment.locatePickedAfterRetry(last,before,first,frame,
+            held,364.00626f,1285.4375f,0f,0f)==null,
+            "recovery requires a meaningful deliberate reverse probe");
+        Game.Image other=lifted(last,frame,held,510,1034);
+        check(DragAlignment.locatePickedAfterRetry(other,before,first,frame,
+            held,364.00626f,1285.4375f,-52.08125f,0)==null,
+            "multiple similar freshly painted red pieces are ambiguous and unsafe");
+    }
+
+    public static void main(String[] args) throws Exception {        delayedRetryVisualMotionRegression();
+        verticalFiveBottomOverlayRegression();
         rightOfFingerPickupRegression();
         statusOverlayOcclusionRegression();
         boundedDraggedPointerRegression();
